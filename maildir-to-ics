@@ -1,0 +1,339 @@
+#!/usr/bin/env python
+# vim: set ts=4 sw=4 et:
+#
+# Copyright (c) 2013 Vincent Untz <vincent@vuntz.net>
+#
+# License: MIT
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+#
+
+
+import errno
+import os
+import string
+import sys
+
+import email
+import hashlib
+import optparse
+import shutil
+
+
+## TODO
+## - add option to skip old events (older than 6 months)
+
+
+'''
+Notes:
+  - we prefer X-GWRECORDID keys to UID when they exist, as GroupWise puts
+    recurring events in multiple mails with the same UID
+'''
+
+
+VERBOSE = 0
+
+
+def verbose_print(s, level = 1):
+    global VERBOSE
+    if VERBOSE >= level:
+        print s
+
+
+def hash_from_file(filename):
+    file_hash = hashlib.md5()
+
+    fb = open(filename, 'rb')
+    while True:
+        buf = fb.read(4096)
+        if not buf:
+            break
+        file_hash.update(buf)
+
+    fb.close()
+
+    return file_hash.hexdigest()
+
+def hash_from_dir(directory):
+    dir_hash = hashlib.md5()
+
+    # We always need to examine files in the same order to make sure the hash
+    # is always computed the same way
+    filenames = os.listdir(directory)
+    filenames.sort
+
+    for filename in filenames:
+        path = os.path.join(directory, filename)
+        if os.path.isdir(path):
+            dir_hash.update(hash_from_dir(path))
+        elif os.path.isfile(path):
+            dir_hash.update(hash_from_file(path))
+        else:
+            verbose_print('Skipping compute of hash of \'%s\': not a file nor a directory.' % path, 3)
+            pass
+
+    return dir_hash.hexdigest()
+
+
+def save_vevent(mail, vevent, uid, gwrecordid, dtstamp, save_dir):
+    if gwrecordid:
+        event_id = gwrecordid
+    else:
+        event_id = uid
+
+    if event_id:
+        filename = filter(lambda x: x in string.printable and x != '/', event_id)
+    else:
+        print >>sys.stderr, 'Ignoring event with no UID in \'%s\'' % mail
+        return
+
+    path = os.path.join(save_dir, filename)
+    if os.path.exists(path):
+        old_dtstamp = None
+
+        fb = open(path)
+        lines = fb.readlines()
+        fb.close()
+
+        for line in lines:
+            if not line.startswith('DTSTAMP:'):
+                continue
+            if line[-1] == '\n':
+                line = line[:-1]
+            old_dtstamp = line[len('DTSTAMP:'):]
+            break
+
+        if dtstamp > old_dtstamp:
+            verbose_print('Duplicate event \'%s\' with newer DTSTAMP, overwriting.' % event_id, 2)
+        else:
+            verbose_print('Duplicate event \'%s\' with same or older DTSTAMP, not overwriting.' % event_id, 2)
+            return
+
+    fp = open(path, 'w')
+    fp.write(vevent)
+    fp.close()
+
+
+def save_events_from_vcalendar(mail, vcalendar, save_dir):
+    lines = vcalendar.split('\n')
+
+    vevent_lines = None
+
+    vevent_uid = None
+    vevent_gwrecordid = None
+    vevent_dtstamp = None
+
+    last_is_uid = False
+    last_is_gwrecordid = False
+    last_is_dtstamp = False
+
+    for line in lines:
+        if vevent_lines is not None:
+            vevent_lines.append(line)
+            if line == 'END:VEVENT':
+                # FIXME: generate UID if none?
+                save_vevent(mail, '\n'.join(vevent_lines), vevent_uid, vevent_gwrecordid, vevent_dtstamp, save_dir)
+                vevent_lines = None
+                vevent_uid = None
+                vevent_gwrecordid = None
+            elif line.startswith('UID:') and vevent_uid is None:
+                # FIXME: what if there's a duplicate UID line? Is it correct to only keep first one?
+                vevent_uid = line[len('UID:'):]
+                last_is_uid = True
+                last_is_gwrecordid = False
+                last_is_dtstamp = False
+            elif line.startswith('X-GWRECORDID:') and vevent_gwrecordid is None:
+                # FIXME: same as above
+                vevent_gwrecordid = line[len('X-GWRECORDID:'):]
+                last_is_uid = False
+                last_is_gwrecordid = True
+                last_is_dtstamp = False
+            elif line.startswith('DTSTAMP:') and vevent_dtstamp is None:
+                # FIXME: same as above
+                vevent_dtstamp = line[len('DTSTAMP:'):]
+                last_is_uid = False
+                last_is_gwrecordid = False
+                last_is_dtstamp = True
+            elif line.startswith(' ') or line.startswith('\t'):
+                if last_is_uid:
+                    vevent_uid += line.strip()
+                elif last_is_gwrecordid:
+                    vevent_gwrecordid += line.strip()
+                elif last_is_dtstamp:
+                    vevent_dtstamp += line.strip()
+            else:
+                last_is_uid = False
+                last_is_gwrecordid = False
+                last_is_dtstamp = False
+        elif line == 'BEGIN:VEVENT':
+            vevent_lines = [ line ]
+            last_is_uid = False
+            last_is_gwrecordid = False
+            last_is_dtstamp = False
+
+    if vevent_lines is not None:
+        verbose_print('Invalid vCalendar in \'%s\'.' % mail, 2)
+        pass
+
+
+def save_events_from_mail(filename, save_dir):
+    if not os.path.exists(filename):
+        print >>sys.stderr, 'Non-existing mail \'%s\'???' % filename
+        return
+
+    fp = open(filename)
+    msg = email.message_from_file(fp)
+    fp.close()
+
+    for part in msg.walk():
+        if part.get_content_type() != 'text/calendar':
+            continue
+        vcalendar = part.get_payload()
+        save_events_from_vcalendar(filename, vcalendar, save_dir)
+
+
+def save_events_from_mails_in_dir(directory, save_dir):
+    if not os.path.isdir(directory):
+        print >>sys.stderr, 'Non-existing Maildir subdirectory \'%s\'???' % directory
+        return
+
+    for filename in os.listdir(directory):
+        path = os.path.join(directory, filename)
+        if not os.path.isfile(path):
+            verbose_print('Skipping \'%s\': not a file.' % path, 3)
+            continue
+        save_events_from_mail(path, save_dir)
+
+
+def save_events_from_maildir(directory, save_dir):
+    for subdir in ['cur', 'new', 'tmp']:
+        path = os.path.join(directory, subdir)
+        save_events_from_mails_in_dir(path, save_dir)
+
+
+def write_ics_from_dir(directory, dest):
+    if dest is not None:
+        fp = open(dest, 'w')
+    else:
+        fp = sys.stdout
+
+    fp.write('BEGIN:VCALENDAR\n')
+    fp.write('PRODID:-//Vincent Untz//NONSGML maildir-to-ics//EN\n')
+    fp.write('VERSION:2.0\n')
+
+    filenames = os.listdir(directory)
+    # sort to try to keep the generated consistent if re-generated
+    filenames.sort
+
+    for filename in filenames:
+        path = os.path.join(directory, filename)
+        event = open(path, 'rb')
+        while True:
+            buf = event.read(4096)
+            if not buf:
+                break
+            fp.write(buf)
+        event.close()
+
+    fp.write('END:VCALENDAR\n')
+    if dest is not None:
+        fp.close()
+
+
+def main(args):
+    global VERBOSE
+
+    parser = optparse.OptionParser(usage='usage: %prog [options] --maildir MAILDIR')
+
+    parser.add_option('--maildir', dest='maildir', default=None,
+                      help='Maildir directory to extract events from')
+    parser.add_option('--ics', dest='ics', default=None,
+                      help='path to ics file that will be created (if not used, will output ics to stdout)')
+    parser.add_option('--force', '-f', action='store_true',
+                      default=False, dest='force',
+                      help='always regenerate ics file')
+    parser.add_option('--verbose', '-v', action='count',
+                      default=0, dest='verbose',
+                      help='be verbose; use multiple times to add more verbosity (default: false)')
+
+    (options, args) = parser.parse_args()
+
+    maildir = options.maildir
+    dest_ics = options.ics
+    force = options.force
+    VERBOSE = options.verbose
+
+    if maildir is None:
+        parser.error('--maildir argument is required')
+
+    xdg_cache_home = os.environ.get('XDG_CACHE_HOME', os.path.join(os.path.expanduser('~'), '.cache'))
+    if not os.path.exists(xdg_cache_home):
+        dirname = os.path.dirname(xdg_cache_home)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+        os.mkdir(xdg_cache_home, 0700)
+
+    cache_hash = hashlib.md5()
+    cache_hash.update(maildir)
+
+    info_dir = os.path.join(xdg_cache_home, 'maildir-to-ics', cache_hash.hexdigest())
+
+    hash_file = os.path.join(info_dir, 'hash')
+    if os.path.exists(hash_file):
+        fp = open(hash_file, 'rb')
+        old_hash = fp.read().strip()
+        fp.close()
+    else:
+        old_hash = None
+
+    new_hash = hash_from_dir(maildir)
+
+    if not force and old_hash == new_hash and (dest_ics is not None and os.path.exists(dest_ics)):
+        verbose_print('No change compared to last run.', 1)
+        return 0
+
+    cache_dir = os.path.join(info_dir, 'vevents')
+    cache_dir_exists = os.path.exists(cache_dir)
+
+    if force or not cache_dir_exists or old_hash != new_hash:
+        if cache_dir_exists:
+            shutil.rmtree(cache_dir)
+        os.makedirs(cache_dir)
+        save_events_from_maildir(maildir, cache_dir)
+
+    try:
+        write_ics_from_dir(cache_dir, dest_ics)
+    except IOError, e:
+        # ignore broken pipe for stdout
+        if dest_ics is None and e.errno != errno.EPIPE:
+            raise e
+
+    fp = open(hash_file, 'w')
+    fp.write(new_hash + '\n')
+    fp.close()
+
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        ret = main(sys.argv)
+        sys.exit(ret)
+    except KeyboardInterrupt:
+        pass
