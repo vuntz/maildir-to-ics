@@ -41,8 +41,21 @@ import shutil
 
 '''
 Notes:
+  - we do not use python-vobject for parsing vEvents, to allow using this
+    without any other dependency than python.
   - we prefer X-GWRECORDID keys to UID when they exist, as GroupWise puts
-    recurring events in multiple mails with the same UID
+    recurring events in multiple mails with the same UID.
+
+How this works:
+  - we have a cache of extracted vEvents from the maildir, to avoid re-parsing
+    all mails all the time. We use a "recursive checksum" to validate that
+    cache.
+  - we also have a cache of DTSTART/DTEND for each vEvent, to avoid re-parsing
+    the extracted vEvents. We also use a checksum to validate that cache.
+  - we avoid rebuilding the iCalendar file if the caches are valid, and the
+    time period for the vEvents to consider didn't change.
+  - we simply concatenate all files together to build the resulting iCalendar
+    file.
 '''
 
 
