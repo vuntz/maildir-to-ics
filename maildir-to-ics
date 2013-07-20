@@ -38,9 +38,6 @@ import optparse
 import shutil
 
 
-## TODO
-## - add option to skip old events (older than 6 months)
-
 
 '''
 Notes:
@@ -292,12 +289,20 @@ def main(args):
     global PREVIOUS_RUN_SECTION
     global VERBOSE
 
-    parser = optparse.OptionParser(usage='usage: %prog [options] --maildir MAILDIR')
+    parser = optparse.OptionParser(usage='usage: %prog [options] --maildir=PATH')
 
     parser.add_option('--maildir', dest='maildir', default=None,
+                      metavar="PATH",
                       help='Maildir directory to extract events from')
     parser.add_option('--ics', dest='ics', default=None,
-                      help='path to ics file that will be created (if not used, will output ics to stdout)')
+                      metavar="FILE",
+                      help='iCalendar file that will be created (if not used, will output ics to stdout)')
+    parser.add_option('--not-before', dest='not_before', type='int', default=61,
+                      metavar='N',
+                      help='ignore events that happened before the last N days (default: 61, ie two months)')
+    parser.add_option('--not-after', dest='not_after', type='int', default=182,
+                      metavar='N',
+                      help='ignore events that will happen after the next N days (default: 182, ie six months)')
     parser.add_option('--force', '-f', action='store_true',
                       default=False, dest='force',
                       help='always regenerate ics file')
@@ -309,6 +314,8 @@ def main(args):
 
     maildir = options.maildir
     dest_ics = options.ics
+    not_before = options.not_before
+    not_after = options.not_after
     force = options.force
     VERBOSE = options.verbose
 
@@ -322,10 +329,9 @@ def main(args):
     # move to absolute path, as we'll save it
     dest_ics = os.path.abspath(dest_ics)
 
-# FIXME: parameters!
     now = datetime.datetime.now()
-    past = datetime.datetime.now() - datetime.timedelta(days=61)
-    future = datetime.datetime.now() + datetime.timedelta(days=182)
+    past = datetime.datetime.now() - datetime.timedelta(days=not_before)
+    future = datetime.datetime.now() + datetime.timedelta(days=not_after)
     limit_past = past.strftime('%Y%m%d')
     limit_future = future.strftime('%Y%m%d')
 
