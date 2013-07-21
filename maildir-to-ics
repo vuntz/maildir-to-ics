@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 # vim: set ts=4 sw=4 et:
 #
 # Copyright (c) 2013 Vincent Untz <vincent@vuntz.net>
@@ -239,8 +240,20 @@ def save_events_from_mail(filename, save_dir):
             continue
 
         charset = part.get_content_charset('ascii').lower()
-        if charset == 'utf-8' and BROKEN_UTF8:
-            decoded = part.get_payload().decode('utf-8')
+        vcalendar = part.get_payload().decode(charset)
+
+        # This is really really ugly. We detect that we have a broken utf8 if
+        # we have some unicode character in the decoded string.
+        if charset == 'utf-8' and BROKEN_UTF8 and u'\xc3' in vcalendar:
+            decoded = vcalendar
+
+            # replace characters that got killed in MIME
+            ## à
+            decoded = decoded.replace(u'\xc3\x20', u'\xc3\xa0')
+            ## è
+            decoded = decoded.replace(u'\xc3\u0308', u'\xc3\xa8')
+            ## ô
+            decoded = decoded.replace(u'\xc3\u0301', u'\xc3\xb4')
 
             encoded = None
             for encoding in ['cp1252', 'iso-8859-15']:
@@ -259,12 +272,12 @@ def save_events_from_mail(filename, save_dir):
             # state, then there's simply nothing we can do to fix the UTF-8:
             # it's just plainly broken, not just double-encoded.
             try:
-                vcalendar = encoded.decode('utf-8')
+                reencoded = encoded.decode('utf-8')
             except UnicodeDecodeError:
                 verbose_print('Mail \'%s\' contains really broken UTF-8.' % filename, 1)
-                vcalendar = encoded.decode('utf-8', 'replace')
-        else:
-            vcalendar = part.get_payload().decode(charset)
+                reencoded = encoded.decode('utf-8', 'replace')
+
+            vcalendar = reencoded
 
         save_events_from_vcalendar(filename, vcalendar, save_dir)
 
