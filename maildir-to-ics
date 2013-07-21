@@ -339,6 +339,8 @@ def main(args):
         print >>sys.stderr, 'Non-existing Maildir bdirectory \'%s\'' % maildir
         return 1
 
+    # move to absolute path, as we use it to compute a hash
+    maildir = os.path.abspath(maildir)
     # move to absolute path, as we'll save it
     dest_ics = os.path.abspath(dest_ics)
 
