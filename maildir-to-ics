@@ -59,6 +59,7 @@ How this works:
 '''
 
 
+BROKEN_UTF8 = False
 PREVIOUS_RUN_SECTION = 'previous'
 VERBOSE = 0
 VEVENTS_DATES = {}
@@ -172,7 +173,7 @@ def save_vevent(mail, vevent, uid, gwrecordid, dtstamp, dtstart, dtend, save_dir
     VEVENTS_DATES[event_id] = (dtstart, dtend)
 
     fp = open(path, 'w')
-    fp.write(vevent)
+    fp.write(vevent.encode('utf-8'))
     fp.close()
 
 
@@ -223,6 +224,8 @@ def save_events_from_vcalendar(mail, vcalendar, save_dir):
 
 
 def save_events_from_mail(filename, save_dir):
+    global BROKEN_UTF8
+
     if not os.path.exists(filename):
         print >>sys.stderr, 'Non-existing mail \'%s\'???' % filename
         return
@@ -234,7 +237,12 @@ def save_events_from_mail(filename, save_dir):
     for part in msg.walk():
         if part.get_content_type() != 'text/calendar':
             continue
-        vcalendar = part.get_payload()
+
+        if BROKEN_UTF8:
+            vcalendar = part.get_payload().decode('utf-8').encode('latin-1').decode('utf-8')
+        else:
+            vcalendar = part.get_payload().decode('utf-8')
+
         save_events_from_vcalendar(filename, vcalendar, save_dir)
 
 
@@ -298,9 +306,10 @@ def write_ics_from_dir(directory, dest, limit_past, limit_future):
 
 
 def main(args):
-    global VEVENTS_DATES
+    global BROKEN_UTF8
     global PREVIOUS_RUN_SECTION
     global VERBOSE
+    global VEVENTS_DATES
 
     parser = optparse.OptionParser(usage='usage: %prog [options] --maildir=PATH')
 
@@ -316,6 +325,9 @@ def main(args):
     parser.add_option('--not-after', dest='not_after', type='int', default=182,
                       metavar='N',
                       help='ignore events that will happen after the next N days (default: 182, ie six months)')
+    parser.add_option('--broken-utf8', action='store_true',
+                      default=False, dest='broken_utf8',
+                      help='assume that UTF-8 in mails is mis-encoded UTF-8 in Latin-1')
     parser.add_option('--force', '-f', action='store_true',
                       default=False, dest='force',
                       help='always regenerate ics file')
@@ -329,6 +341,7 @@ def main(args):
     dest_ics = options.ics
     not_before = options.not_before
     not_after = options.not_after
+    BROKEN_UTF8 = options.broken_utf8
     force = options.force
     VERBOSE = options.verbose
 
