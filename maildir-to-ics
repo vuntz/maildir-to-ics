@@ -75,6 +75,7 @@ def verbose_print(s, level = 1):
 class LineUnwrapper:
     def __init__(self, s):
         self.lines = s.split('\n')
+        self.lines_read = None
         self.saved = None
 
     def getlines(self):
@@ -82,12 +83,16 @@ class LineUnwrapper:
             if line.startswith(' ') or line.startswith('\t'):
                 if self.saved is None:
                     self.saved = ''
+                    self.lines_read = []
+                self.lines_read.append(line)
                 self.saved += line.strip()
             else:
                 if self.saved is not None:
-                    retval = self.saved
+                    retval = (self.lines_read, self.saved)
+                    self.lines_read = [ line ]
                     self.saved = line.strip()
                     yield retval
+                self.lines_read = [ line ]
                 self.saved = line.strip()
 
 
@@ -159,7 +164,7 @@ def save_vevent(mail, vevent, uid, gwrecordid, dtstamp, dtstart, dtend, save_dir
         lines = fb.readlines()
         fb.close()
 
-        for line in content.getlines():
+        for (real_lines, line) in content.getlines():
             if not line.startswith('DTSTAMP:'):
                 continue
             old_dtstamp = line[len('DTSTAMP:'):]
@@ -188,9 +193,9 @@ def save_events_from_vcalendar(mail, vcalendar, save_dir):
     dtstart = None
     dtend = None
 
-    for line in content.getlines():
+    for (real_lines, line) in content.getlines():
         if vevent is not None:
-            vevent.append(line)
+            vevent.extend(real_lines)
             # FIXME: what if there's a duplicate UID/DTSTAMP/etc. line? Is it correct to only keep first one?
             if line == 'END:VEVENT':
                 # FIXME: generate UID if none?
@@ -217,7 +222,7 @@ def save_events_from_vcalendar(mail, vcalendar, save_dir):
             elif line.startswith('DTEND;') and dtend is None:
                 dtend = line[line.find(':')+1:]
         elif line == 'BEGIN:VEVENT':
-            vevent = [ line ]
+            vevent = real_lines
 
     if vevent is not None:
         verbose_print('Invalid vCalendar in \'%s\'.' % mail, 2)
