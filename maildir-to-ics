@@ -238,10 +238,33 @@ def save_events_from_mail(filename, save_dir):
         if part.get_content_type() != 'text/calendar':
             continue
 
-        if BROKEN_UTF8:
-            vcalendar = part.get_payload().decode('utf-8').encode('latin-1').decode('utf-8')
+        charset = part.get_content_charset('ascii').lower()
+        if charset == 'utf-8' and BROKEN_UTF8:
+            decoded = part.get_payload().decode('utf-8')
+
+            encoded = None
+            for encoding in ['cp1252', 'iso-8859-15']:
+                try:
+                    encoded = decoded.encode(encoding)
+                except UnicodeEncodeError:
+                    continue
+                break
+
+            if encoded is None:
+                # if we hit this, we finish breaking the UTF-8, and we'll have
+                # the verbose_print from the last UnicodeDecodeError
+                encoded = decoded.encode('iso-8859-15', 'replace')
+
+            # we use 'replace' for the last decode since if we reached that
+            # state, then there's simply nothing we can do to fix the UTF-8:
+            # it's just plainly broken, not just double-encoded.
+            try:
+                vcalendar = encoded.decode('utf-8')
+            except UnicodeDecodeError:
+                verbose_print('Mail \'%s\' contains really broken UTF-8.' % filename, 1)
+                vcalendar = encoded.decode('utf-8', 'replace')
         else:
-            vcalendar = part.get_payload().decode('utf-8')
+            vcalendar = part.get_payload().decode(charset)
 
         save_events_from_vcalendar(filename, vcalendar, save_dir)
 
