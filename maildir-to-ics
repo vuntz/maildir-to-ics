@@ -78,7 +78,7 @@ class LineUnwrapper:
         self.lines_read = None
         self.saved = None
 
-    def getlines(self):
+    def each_line(self):
         for line in self.lines:
             if line.startswith(' ') or line.startswith('\t'):
                 if self.saved is None:
@@ -164,7 +164,7 @@ def save_vevent(mail, vevent, uid, gwrecordid, dtstamp, dtstart, dtend, save_dir
         lines = fb.readlines()
         fb.close()
 
-        for (real_lines, line) in content.getlines():
+        for (real_lines, line) in content.each_line():
             if not line.startswith('DTSTAMP:'):
                 continue
             old_dtstamp = line[len('DTSTAMP:'):]
@@ -193,7 +193,7 @@ def save_events_from_vcalendar(mail, vcalendar, save_dir):
     dtstart = None
     dtend = None
 
-    for (real_lines, line) in content.getlines():
+    for (real_lines, line) in content.each_line():
         if vevent is not None:
             vevent.extend(real_lines)
             # FIXME: what if there's a duplicate UID/DTSTAMP/etc. line? Is it correct to only keep first one?
