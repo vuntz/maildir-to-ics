@@ -390,7 +390,7 @@ def main(args):
         parser.error('--maildir argument is required')
 
     if not os.path.isdir(maildir):
-        print >>sys.stderr, 'Non-existing Maildir bdirectory \'%s\'' % maildir
+        print >>sys.stderr, 'Non-existing Maildir directory \'%s\'' % maildir
         return 1
 
     # move to absolute path, as we use it to compute a hash
