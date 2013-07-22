@@ -396,7 +396,8 @@ def main(args):
     # move to absolute path, as we use it to compute a hash
     maildir = os.path.abspath(maildir)
     # move to absolute path, as we'll save it
-    dest_ics = os.path.abspath(dest_ics)
+    if dest_ics is not None:
+        dest_ics = os.path.abspath(dest_ics)
 
     now = datetime.datetime.now()
     past = datetime.datetime.now() - datetime.timedelta(days=not_before)
