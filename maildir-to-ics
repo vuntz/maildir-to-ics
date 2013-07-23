@@ -117,7 +117,7 @@ def hash_from_dir(directory):
     # We always need to examine files in the same order to make sure the hash
     # is always computed the same way
     filenames = os.listdir(directory)
-    filenames.sort
+    filenames.sort()
 
     for filename in filenames:
         path = os.path.join(directory, filename)
@@ -320,7 +320,7 @@ def write_ics_from_dir(directory, dest, limit_past, limit_future):
 
     filenames = os.listdir(directory)
     # sort to try to keep the generated file consistent if re-generated
-    filenames.sort
+    filenames.sort()
 
     for filename in filenames:
         if VEVENTS_DATES.has_key(filename):
