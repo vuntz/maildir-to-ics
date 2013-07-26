@@ -245,7 +245,7 @@ def save_events_from_mail(filename, save_dir):
             continue
 
         charset = part.get_content_charset('ascii').lower()
-        vcalendar = part.get_payload().decode(charset)
+        vcalendar = part.get_payload(decode = True).decode(charset)
 
         # This is really really ugly. We detect that we have a broken utf8 if
         # we have some unicode character in the decoded string.
