@@ -60,6 +60,7 @@ How this works:
 '''
 
 
+ADD_ALARM = False
 BROKEN_UTF8 = False
 PREVIOUS_RUN_SECTION = 'previous'
 VERBOSE = 0
@@ -184,6 +185,8 @@ def save_vevent(mail, vevent, uid, gwrecordid, dtstamp, dtstart, dtend, save_dir
 
 
 def save_events_from_vcalendar(mail, vcalendar, save_dir):
+    global ADD_ALARM
+
     content = LineUnwrapper(vcalendar)
 
     vevent = None
@@ -193,12 +196,22 @@ def save_events_from_vcalendar(mail, vcalendar, save_dir):
     dtstart = None
     dtend = None
 
+    need_valarm = ADD_ALARM
+    valarm = '''BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:REMINDER
+TRIGGER;RELATED=START:-PT5M
+END:VALARM'''
+
     for (real_lines, line) in content.each_line():
         if vevent is not None:
             vevent.extend(real_lines)
             # FIXME: what if there's a duplicate UID/DTSTAMP/etc. line? Is it correct to only keep first one?
             if line == 'END:VEVENT':
                 # FIXME: generate UID if none?
+                if need_valarm:
+                    # insert before the END:VEVENT
+                    vevent.insert(-len(real_lines), valarm)
                 # Append final \n for EOL
                 save_vevent(mail, '\n'.join(vevent)+'\n', uid, gwrecordid, dtstamp, dtstart, dtend, save_dir)
                 vevent = None
@@ -215,12 +228,34 @@ def save_events_from_vcalendar(mail, vcalendar, save_dir):
                 dtstamp = line[len('DTSTAMP:'):]
             elif line.startswith('DTSTART:') and dtstart is None:
                 dtstart = line[len('DTSTART:'):]
+                if need_valarm:
+                    # event with a all-day DTSTART are most-likely all-day
+                    # events
+                    if len(dtstart) == len('19700101'):
+                        need_valarm = False
             elif line.startswith('DTSTART;') and dtstart is None:
                 dtstart = line[line.find(':')+1:]
+                if need_valarm:
+                    # event with a all-day DTSTART are most-likely all-day
+                    # events
+                    if len(dtstart) == len('19700101'):
+                        need_valarm = False
             elif line.startswith('DTEND:') and dtend is None:
                 dtend = line[len('DTEND:'):]
             elif line.startswith('DTEND;') and dtend is None:
                 dtend = line[line.find(':')+1:]
+            elif need_valarm:
+                if line.startswith('X-GWITEM-TYPE:'):
+                    if line[len('X-GWITEM-TYPE:'):].lower() != 'appointment':
+                        need_valarm = False
+                elif line.startswith('X-GWALLDAYEVENT:'):
+                    if line[len('X-GWALLDAYEVENT:'):].lower() == 'true':
+                        need_valarm = False
+                elif line.startswith('X-MICROSOFT-CDO-ALLDAYEVENT:'):
+                    if line[len('X-MICROSOFT-CDO-ALLDAYEVENT:'):].lower() == 'true':
+                        need_valarm = False
+                elif line == 'BEGIN:VALARM':
+                    need_valarm = False
         elif line == 'BEGIN:VEVENT':
             vevent = real_lines
 
@@ -347,6 +382,7 @@ def write_ics_from_dir(directory, dest, limit_past, limit_future):
 
 
 def main(args):
+    global ADD_ALARM
     global BROKEN_UTF8
     global PREVIOUS_RUN_SECTION
     global VERBOSE
@@ -366,6 +402,9 @@ def main(args):
     parser.add_option('--not-after', dest='not_after', type='int', default=182,
                       metavar='N',
                       help='ignore events that will happen after the next N days (default: 182, ie six months)')
+    parser.add_option('--add-alarm', action='store_true',
+                      default=False, dest='add_alarm',
+                      help='automatically add 5 minutes alarm to non-all-day appointments')
     parser.add_option('--broken-utf8', action='store_true',
                       default=False, dest='broken_utf8',
                       help='assume that UTF-8 in mails is mis-encoded UTF-8 in Latin-1')
@@ -382,6 +421,7 @@ def main(args):
     dest_ics = options.ics
     not_before = options.not_before
     not_after = options.not_after
+    ADD_ALARM = options.add_alarm
     BROKEN_UTF8 = options.broken_utf8
     force = options.force
     VERBOSE = options.verbose
