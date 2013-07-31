@@ -202,6 +202,9 @@ ACTION:DISPLAY
 DESCRIPTION:REMINDER
 TRIGGER;RELATED=START:-PT5M
 END:VALARM'''
+    # Two days in the past; this avoids any issue with timezones ;-)
+    yesterday = (datetime.datetime.now() - datetime.timedelta(days=2))
+    no_alarm_before = yesterday.strftime('%Y%m%d')
 
     for (real_lines, line) in content.each_line():
         if vevent is not None:
@@ -233,12 +236,16 @@ END:VALARM'''
                     # events
                     if len(dtstart) == len('19700101'):
                         need_valarm = False
+                    elif dtstart < no_alarm_before:
+                        need_valarm = False
             elif line.startswith('DTSTART;') and dtstart is None:
                 dtstart = line[line.find(':')+1:]
                 if need_valarm:
                     # event with a all-day DTSTART are most-likely all-day
                     # events
                     if len(dtstart) == len('19700101'):
+                        need_valarm = False
+                    elif dtstart < no_alarm_before:
                         need_valarm = False
             elif line.startswith('DTEND:') and dtend is None:
                 dtend = line[len('DTEND:'):]
