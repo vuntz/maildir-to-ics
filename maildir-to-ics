@@ -218,11 +218,6 @@ END:VALARM'''
                 # Append final \n for EOL
                 save_vevent(mail, '\n'.join(vevent)+'\n', uid, gwrecordid, dtstamp, dtstart, dtend, save_dir)
                 vevent = None
-                uid = None
-                gwrecordid = None
-                dtstamp = None
-                dtstart = None
-                dtend = None
             elif line.startswith('UID:') and uid is None:
                 uid = line[len('UID:'):]
             elif line.startswith('X-GWRECORDID:') and gwrecordid is None:
@@ -265,6 +260,11 @@ END:VALARM'''
                     need_valarm = False
         elif line == 'BEGIN:VEVENT':
             vevent = real_lines
+            uid = None
+            gwrecordid = None
+            dtstamp = None
+            dtstart = None
+            dtend = None
 
     if vevent is not None:
         verbose_print('Invalid vCalendar in \'%s\'.' % mail, 2)
