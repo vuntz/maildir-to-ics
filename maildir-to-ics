@@ -128,7 +128,6 @@ def hash_from_dir(directory):
             dir_hash.update(hash_from_file(path))
         else:
             verbose_print('Skipping compute of hash of \'%s\': not a file nor a directory.' % path, 1)
-            pass
 
     return dir_hash.hexdigest()
 
@@ -268,7 +267,6 @@ END:VALARM'''
 
     if vevent is not None:
         verbose_print('Invalid vCalendar in \'%s\'.' % mail, 2)
-        pass
 
 
 def save_events_from_mail(filename, save_dir):
