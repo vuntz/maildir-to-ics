@@ -96,6 +96,7 @@ class LineUnwrapper:
 
     def each_line(self):
         for line in self.lines:
+            line = line.rstrip('\r')
             if line.startswith(' ') or line.startswith('\t'):
                 if self.saved is None:
                     self.saved = ''
