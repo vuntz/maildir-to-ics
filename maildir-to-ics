@@ -264,6 +264,7 @@ END:VALARM'''
             dtstamp = None
             dtstart = None
             dtend = None
+            need_valarm = ADD_ALARM
 
     if vevent is not None:
         verbose_print('Invalid vCalendar in \'%s\'.' % mail, 2)
