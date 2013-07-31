@@ -440,8 +440,8 @@ def main(args):
         dest_ics = os.path.abspath(dest_ics)
 
     now = datetime.datetime.now()
-    past = datetime.datetime.now() - datetime.timedelta(days=not_before)
-    future = datetime.datetime.now() + datetime.timedelta(days=not_after)
+    past = now - datetime.timedelta(days=not_before)
+    future = now + datetime.timedelta(days=not_after)
     limit_past = past.strftime('%Y%m%d')
     limit_future = future.strftime('%Y%m%d')
 
