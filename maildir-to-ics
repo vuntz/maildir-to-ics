@@ -40,7 +40,6 @@ import shutil
 import time
 
 
-
 '''
 Notes:
   - we do not use python-vobject for parsing vEvents, to allow using this
@@ -82,7 +81,7 @@ MS_TIMEZONE_MAP = {
 }
 
 
-def verbose_print(s, level = 1):
+def verbose_print(s, level=1):
     global VERBOSE
     if VERBOSE >= level:
         print s
@@ -106,10 +105,10 @@ class LineUnwrapper:
             else:
                 if self.saved is not None:
                     retval = (self.lines_read, self.saved)
-                    self.lines_read = [ line ]
+                    self.lines_read = [line]
                     self.saved = line.strip()
                     yield retval
-                self.lines_read = [ line ]
+                self.lines_read = [line]
                 self.saved = line.strip()
 
 
@@ -143,7 +142,8 @@ def hash_from_dir(directory):
         elif os.path.isfile(path):
             dir_hash.update(hash_from_file(path))
         else:
-            verbose_print('Skipping compute of hash of \'%s\': not a file nor a directory.' % path, 1)
+            verbose_print('Skipping compute of hash of \'%s\': not a file nor '
+                          'a directory.' % path, 1)
 
     return dir_hash.hexdigest()
 
@@ -171,7 +171,7 @@ def convert_tz_date_to_utc(prop, line, dt):
             tzid = tzid[1:-1]
 
         # Windows apps use Windows timezone names, that we need to translate
-        if MS_TIMEZONE_MAP.has_key(tzid):
+        if tzid in MS_TIMEZONE_MAP:
             tzid = MS_TIMEZONE_MAP[tzid]
 
         try:
@@ -187,7 +187,7 @@ def convert_tz_date_to_utc(prop, line, dt):
 
         # Change the timezone to the one defined in the date so that we use the
         # system to convert the time in that timezone to UTC time
-        prefix = ';'.join(non_tzid_params)+':'
+        prefix = ';'.join(non_tzid_params) + ':'
         old_tzid = os.environ.get('TZ', None)
         os.environ['TZ'] = tzid
         time.tzset()
@@ -205,17 +205,21 @@ def convert_tz_date_to_utc(prop, line, dt):
         # if there's no difference, and the TZID is not a known alias for UTC,
         # then we don't know how to deal with this timezone :/
         if utc_dt == dt and tzid not in ['UTC', 'Etc/GMT']:
-            print >>sys.stderr, 'Cannot convert date with timezone to UTC in line \'%s\': cannot interpret timezone \'%s\'.' % (line, tzid)
+            print >>sys.stderr, 'Cannot convert date with timezone to UTC ' \
+                                'in line \'%s\': cannot interpret timezone ' \
+                                '\'%s\'.' % (line, tzid)
             return None
 
         # trailing "Z" to say this is UTC
         return prefix + utc_dt + 'Z'
     except Exception, e:
-        print >>sys.stderr, 'Cannot convert date with timezone to UTC in line \'%s\': %s.' % (line, e)
+        print >>sys.stderr, 'Cannot convert date with timezone to UTC ' \
+                            'in line \'%s\': %s.' % (line, e)
         return None
 
 
-def save_vevent(mail, vevent, uid, gwrecordid, dtstamp, dtstart, dtend, save_dir):
+def save_vevent(mail, vevent, uid, gwrecordid,
+                dtstamp, dtstart, dtend, save_dir):
     global VEVENTS_DATES
 
     if gwrecordid:
@@ -224,7 +228,8 @@ def save_vevent(mail, vevent, uid, gwrecordid, dtstamp, dtstart, dtend, save_dir
         event_id = uid
 
     if event_id:
-        filename = filter(lambda x: x in string.printable and x != '/', event_id)
+        filename = filter(lambda x: x in string.printable and x != '/',
+                          event_id)
     else:
         print >>sys.stderr, 'Ignoring event with no UID in \'%s\'' % mail
         return
@@ -254,9 +259,11 @@ def save_vevent(mail, vevent, uid, gwrecordid, dtstamp, dtstart, dtend, save_dir
             break
 
         if dtstamp > old_dtstamp:
-            verbose_print('Duplicate event \'%s\' with newer DTSTAMP, overwriting.' % event_id, 2)
+            verbose_print('Duplicate event \'%s\' with newer DTSTAMP, '
+                          'overwriting.' % event_id, 2)
         else:
-            verbose_print('Duplicate event \'%s\' with same or older DTSTAMP, not overwriting.' % event_id, 2)
+            verbose_print('Duplicate event \'%s\' with same or older DTSTAMP, '
+                          'not overwriting.' % event_id, 2)
             return
 
     VEVENTS_DATES[event_id] = (dtstart, dtend)
@@ -295,14 +302,16 @@ END:VALARM'''
     for (real_lines, line) in content.each_line():
         if vevent is not None:
             vevent.extend(real_lines)
-            # FIXME: what if there's a duplicate UID/DTSTAMP/etc. line? Is it correct to only keep first one?
+            # FIXME: what if there's a duplicate UID/DTSTAMP/etc. line? Is it
+            # correct to only keep first one?
             if line == 'END:VEVENT':
                 # FIXME: generate UID if none?
                 if need_valarm:
                     # insert before the END:VEVENT
                     vevent.insert(-len(real_lines), valarm)
                 # Append final \n for EOL
-                save_vevent(mail, '\n'.join(vevent)+'\n', uid, gwrecordid, dtstamp, dtstart, dtend, save_dir)
+                save_vevent(mail, '\n'.join(vevent) + '\n', uid, gwrecordid,
+                            dtstamp, dtstart, dtend, save_dir)
                 vevent = None
             elif line.startswith('UID:') and uid is None:
                 uid = line[len('UID:'):]
@@ -320,7 +329,7 @@ END:VALARM'''
                     elif dtstart < no_alarm_before:
                         need_valarm = False
             elif line.startswith('DTSTART;') and dtstart is None:
-                dtstart = line[line.find(':')+1:]
+                dtstart = line[line.find(':') + 1:]
 
                 new_line = convert_tz_date_to_utc('DTSTART', line, dtstart)
                 if new_line:
@@ -341,7 +350,7 @@ END:VALARM'''
             elif line.startswith('DTEND:') and dtend is None:
                 dtend = line[len('DTEND:'):]
             elif line.startswith('DTEND;') and dtend is None:
-                dtend = line[line.find(':')+1:]
+                dtend = line[line.find(':') + 1:]
 
                 new_line = convert_tz_date_to_utc('DTEND', line, dtend)
                 if new_line:
@@ -353,13 +362,16 @@ END:VALARM'''
                         vevent.append(new_line)
             elif need_valarm:
                 if line.startswith('X-GWITEM-TYPE:'):
-                    if line[len('X-GWITEM-TYPE:'):].lower() != 'appointment':
+                    value = line[len('X-GWITEM-TYPE:'):].lower()
+                    if value != 'appointment':
                         need_valarm = False
                 elif line.startswith('X-GWALLDAYEVENT:'):
-                    if line[len('X-GWALLDAYEVENT:'):].lower() == 'true':
+                    value = line[len('X-GWALLDAYEVENT:'):].lower()
+                    if value == 'true':
                         need_valarm = False
                 elif line.startswith('X-MICROSOFT-CDO-ALLDAYEVENT:'):
-                    if line[len('X-MICROSOFT-CDO-ALLDAYEVENT:'):].lower() == 'true':
+                    value = line[len('X-MICROSOFT-CDO-ALLDAYEVENT:'):].lower()
+                    if value == 'true':
                         need_valarm = False
                 elif line == 'BEGIN:VALARM':
                     need_valarm = False
@@ -392,7 +404,7 @@ def save_events_from_mail(filename, save_dir):
             continue
 
         charset = part.get_content_charset('ascii').lower()
-        vcalendar = part.get_payload(decode = True).decode(charset)
+        vcalendar = part.get_payload(decode=True).decode(charset)
 
         # This is really really ugly. We detect that we have a broken utf8 if
         # we have some unicode character in the decoded string.
@@ -426,7 +438,8 @@ def save_events_from_mail(filename, save_dir):
             try:
                 reencoded = encoded.decode('utf-8')
             except UnicodeDecodeError:
-                verbose_print('Mail \'%s\' contains really broken UTF-8.' % filename, 1)
+                verbose_print('Mail \'%s\' contains really broken UTF-8.' %
+                              filename, 1)
                 reencoded = encoded.decode('utf-8', 'replace')
 
             vcalendar = reencoded
@@ -436,7 +449,8 @@ def save_events_from_mail(filename, save_dir):
 
 def save_events_from_mails_in_dir(directory, save_dir):
     if not os.path.isdir(directory):
-        print >>sys.stderr, 'Non-existing Maildir subdirectory \'%s\'???' % directory
+        print >>sys.stderr, 'Non-existing Maildir subdirectory ' \
+                            '\'%s\'???' % directory
         return
 
     for filename in os.listdir(directory):
@@ -470,13 +484,15 @@ def write_ics_from_dir(directory, dest, limit_past, limit_future):
     filenames.sort()
 
     for filename in filenames:
-        if VEVENTS_DATES.has_key(filename):
+        if filename in VEVENTS_DATES:
             (dtstart, dtend) = VEVENTS_DATES[filename]
             if dtstart > limit_future:
-                verbose_print('Skipping event \'%s\': too distant in the future.' % filename, 3)
+                verbose_print('Skipping event \'%s\': too distant '
+                              'in the future.' % filename, 3)
                 continue
             if dtend < limit_past:
-                verbose_print('Skipping event \'%s\': too distant in the past.' % filename, 3)
+                verbose_print('Skipping event \'%s\': too distant '
+                              'in the past.' % filename, 3)
                 continue
 
         path = os.path.join(directory, filename)
@@ -500,32 +516,43 @@ def main(args):
     global VERBOSE
     global VEVENTS_DATES
 
-    parser = optparse.OptionParser(usage='usage: %prog [options] --maildir=PATH')
+    usage_str = 'usage: %prog [options] --maildir=PATH'
+    parser = optparse.OptionParser(usage=usage_str)
 
-    parser.add_option('--maildir', dest='maildir', default=None,
+    parser.add_option('--maildir', dest='maildir',
+                      default=None,
                       metavar="PATH",
                       help='Maildir directory to extract events from')
-    parser.add_option('--ics', dest='ics', default=None,
+    parser.add_option('--ics', dest='ics',
+                      default=None,
                       metavar="FILE",
-                      help='iCalendar file that will be created (if not used, will output ics to stdout)')
-    parser.add_option('--not-before', dest='not_before', type='int', default=61,
+                      help='iCalendar file that will be created '
+                           '(if not used, will output ics to stdout)')
+    parser.add_option('--not-before', dest='not_before',
+                      type='int', default=61,
                       metavar='N',
-                      help='ignore events that happened before the last N days (default: 61, ie two months)')
-    parser.add_option('--not-after', dest='not_after', type='int', default=182,
+                      help='ignore events that happened before the '
+                           'last N days (default: 61, ie two months)')
+    parser.add_option('--not-after', dest='not_after',
+                      type='int', default=182,
                       metavar='N',
-                      help='ignore events that will happen after the next N days (default: 182, ie six months)')
-    parser.add_option('--add-alarm', action='store_true',
-                      default=False, dest='add_alarm',
-                      help='automatically add 5 minutes alarm to non-all-day appointments')
-    parser.add_option('--broken-utf8', action='store_true',
-                      default=False, dest='broken_utf8',
-                      help='assume that UTF-8 in mails is mis-encoded UTF-8 in Latin-1')
-    parser.add_option('--force', '-f', action='store_true',
-                      default=False, dest='force',
+                      help='ignore events that will happen after the '
+                           'next N days (default: 182, ie six months)')
+    parser.add_option('--add-alarm', dest='add_alarm',
+                      action='store_true', default=False,
+                      help='automatically add 5 minutes alarm to non-all-day '
+                           'appointments')
+    parser.add_option('--broken-utf8', dest='broken_utf8',
+                      action='store_true', default=False,
+                      help='assume that UTF-8 in mails is mis-encoded UTF-8 '
+                           'in Latin-1')
+    parser.add_option('--force', '-f', dest='force',
+                      action='store_true', default=False,
                       help='always regenerate ics file')
-    parser.add_option('--verbose', '-v', action='count',
-                      default=0, dest='verbose',
-                      help='be verbose; use multiple times to add more verbosity (default: false)')
+    parser.add_option('--verbose', '-v', dest='verbose',
+                      action='count', default=0,
+                      help='be verbose; use multiple times to add more '
+                           'verbosity (default: false)')
 
     (options, args) = parser.parse_args()
 
@@ -557,7 +584,8 @@ def main(args):
     limit_past = past.strftime('%Y%m%d')
     limit_future = future.strftime('%Y%m%d')
 
-    xdg_cache_home = os.environ.get('XDG_CACHE_HOME', os.path.join(os.path.expanduser('~'), '.cache'))
+    fallback_xdg_cache_home = os.path.join(os.path.expanduser('~'), '.cache')
+    xdg_cache_home = os.environ.get('XDG_CACHE_HOME', fallback_xdg_cache_home)
     if not os.path.exists(xdg_cache_home):
         dirname = os.path.dirname(xdg_cache_home)
         if not os.path.exists(dirname):
@@ -567,7 +595,8 @@ def main(args):
     cache_hash = hashlib.md5()
     cache_hash.update(maildir)
 
-    info_dir = os.path.join(xdg_cache_home, 'maildir-to-ics', cache_hash.hexdigest())
+    info_dir = os.path.join(xdg_cache_home, 'maildir-to-ics',
+                            cache_hash.hexdigest())
 
     previous_run = ConfigParser.SafeConfigParser()
     previous_run_path = os.path.join(info_dir, 'previous-run.ini')
@@ -587,21 +616,29 @@ def main(args):
         previous_run.add_section(PREVIOUS_RUN_SECTION)
 
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'mails'):
-        old_mails_hash = previous_run.get(PREVIOUS_RUN_SECTION, 'mails')
+        old_mails_hash = previous_run.get(PREVIOUS_RUN_SECTION,
+                                          'mails')
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'vevents_cache'):
-        old_vevents_cache_hash = previous_run.get(PREVIOUS_RUN_SECTION, 'vevents_cache')
+        old_vevents_cache_hash = previous_run.get(PREVIOUS_RUN_SECTION,
+                                                  'vevents_cache')
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'vevents_dates'):
-        old_vevents_dates_hash = previous_run.get(PREVIOUS_RUN_SECTION, 'vevents_dates')
+        old_vevents_dates_hash = previous_run.get(PREVIOUS_RUN_SECTION,
+                                                  'vevents_dates')
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'add_alarm'):
-        old_add_alarm = previous_run.get(PREVIOUS_RUN_SECTION, 'add_alarm')
+        old_add_alarm = previous_run.get(PREVIOUS_RUN_SECTION,
+                                         'add_alarm')
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'broken_utf8'):
-        old_broken_utf8 = previous_run.get(PREVIOUS_RUN_SECTION, 'broken_utf8')
+        old_broken_utf8 = previous_run.get(PREVIOUS_RUN_SECTION,
+                                           'broken_utf8')
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'limit_past'):
-        old_limit_past = previous_run.get(PREVIOUS_RUN_SECTION, 'limit_past')
+        old_limit_past = previous_run.get(PREVIOUS_RUN_SECTION,
+                                          'limit_past')
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'limit_future'):
-        old_limit_future = previous_run.get(PREVIOUS_RUN_SECTION, 'limit_future')
+        old_limit_future = previous_run.get(PREVIOUS_RUN_SECTION,
+                                            'limit_future')
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'file'):
-        old_ics = previous_run.get(PREVIOUS_RUN_SECTION, 'file')
+        old_ics = previous_run.get(PREVIOUS_RUN_SECTION,
+                                   'file')
 
     new_mails_hash = hash_from_dir(maildir)
     previous_run.set(PREVIOUS_RUN_SECTION, 'mails', new_mails_hash)
@@ -631,7 +668,8 @@ def main(args):
                 line = line[:-1]
             elements = line.split('\t')
             if len(elements) != 3:
-                verbose_print('Line \'%s\' in \'%s\' is invalid.' % (line, vevent_dates), 1)
+                verbose_print('Line \'%s\' in \'%s\' is ' 'invalid.' %
+                              (line, vevent_dates), 1)
                 # file os corrupted, we'll regenerate it
                 need_to_rebuild_cache = True
                 VEVENTS_DATES = {}
@@ -648,10 +686,13 @@ def main(args):
         save_events_from_maildir(maildir, cache_dir)
 
         new_vevents_cache_hash = hash_from_dir(cache_dir)
-        previous_run.set(PREVIOUS_RUN_SECTION, 'vevents_cache', new_vevents_cache_hash)
+        previous_run.set(PREVIOUS_RUN_SECTION,
+                         'vevents_cache', new_vevents_cache_hash)
 
-        previous_run.set(PREVIOUS_RUN_SECTION, 'add_alarm', str(ADD_ALARM))
-        previous_run.set(PREVIOUS_RUN_SECTION, 'broken_utf8', str(BROKEN_UTF8))
+        previous_run.set(PREVIOUS_RUN_SECTION,
+                         'add_alarm', str(ADD_ALARM))
+        previous_run.set(PREVIOUS_RUN_SECTION,
+                         'broken_utf8', str(BROKEN_UTF8))
 
         dates_hash = hashlib.md5()
         fp = open(vevents_dates, 'w')
@@ -662,11 +703,13 @@ def main(args):
         fp.close()
 
         new_vevents_dates_hash = dates_hash.hexdigest()
-        previous_run.set(PREVIOUS_RUN_SECTION, 'vevents_dates', new_vevents_dates_hash)
+        previous_run.set(PREVIOUS_RUN_SECTION,
+                         'vevents_dates', new_vevents_dates_hash)
     else:
         new_vevents_cache_hash = old_vevents_cache_hash
         new_vevents_dates_hash = old_vevents_dates_hash
-        verbose_print('No need to rebuild vEvents cache: no change compared to last run.', 1)
+        verbose_print('No need to rebuild vEvents cache: '
+                      'no change compared to last run.', 1)
 
     # regenerate ics if:
     #  - --force is used
@@ -702,7 +745,8 @@ def main(args):
         previous_run.write(fp)
         fp.close()
     else:
-        verbose_print('No need to regenerate vCalendar: no change compared to last run.', 1)
+        verbose_print('No need to regenerate vCalendar: '
+                      'no change compared to last run.', 1)
 
     return 0
 
