@@ -284,6 +284,10 @@ ACTION:DISPLAY
 DESCRIPTION:REMINDER
 TRIGGER;RELATED=START:-PT5M
 END:VALARM'''
+    # We don't add alarms for the past; while technically, we should not do
+    # that since this means regenerating the ics with the same mails on
+    # different days will have different results, in practice this is no big
+    # deal and this avoids unneeded modifications.
     # Two days in the past; this avoids any issue with timezones ;-)
     yesterday = (datetime.datetime.now() - datetime.timedelta(days=2))
     no_alarm_before = yesterday.strftime('%Y%m%d')
@@ -573,6 +577,8 @@ def main(args):
     old_mails_hash = None
     old_vevents_cache_hash = None
     old_vevents_dates_hash = None
+    old_add_alarm = None
+    old_broken_utf8 = None
     old_limit_past = None
     old_limit_future = None
     old_ics = None
@@ -586,6 +592,10 @@ def main(args):
         old_vevents_cache_hash = previous_run.get(PREVIOUS_RUN_SECTION, 'vevents_cache')
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'vevents_dates'):
         old_vevents_dates_hash = previous_run.get(PREVIOUS_RUN_SECTION, 'vevents_dates')
+    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'add_alarm'):
+        old_add_alarm = previous_run.get(PREVIOUS_RUN_SECTION, 'add_alarm')
+    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'broken_utf8'):
+        old_broken_utf8 = previous_run.get(PREVIOUS_RUN_SECTION, 'broken_utf8')
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'limit_past'):
         old_limit_past = previous_run.get(PREVIOUS_RUN_SECTION, 'limit_past')
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'limit_future'):
@@ -609,7 +619,9 @@ def main(args):
 
     if force or old_mails_hash != new_mails_hash or \
         not cache_dir_exists or \
-        old_vevents_dates_hash != current_vevents_dates_hash:
+        old_vevents_dates_hash != current_vevents_dates_hash or \
+        old_add_alarm != str(ADD_ALARM) or \
+        old_broken_utf8 != str(BROKEN_UTF8):
         need_to_rebuild_cache = True
 
     if not need_to_rebuild_cache:
@@ -637,6 +649,9 @@ def main(args):
 
         new_vevents_cache_hash = hash_from_dir(cache_dir)
         previous_run.set(PREVIOUS_RUN_SECTION, 'vevents_cache', new_vevents_cache_hash)
+
+        previous_run.set(PREVIOUS_RUN_SECTION, 'add_alarm', str(ADD_ALARM))
+        previous_run.set(PREVIOUS_RUN_SECTION, 'broken_utf8', str(BROKEN_UTF8))
 
         dates_hash = hashlib.md5()
         fp = open(vevents_dates, 'w')
