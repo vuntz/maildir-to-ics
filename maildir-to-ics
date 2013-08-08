@@ -153,7 +153,7 @@ def convert_tz_date_to_utc(prop, line, dt):
 
     try:
         tzid = None
-        params = line[len(prop + ';'):line.find(':')]
+        params = line[len(prop + ';'):line.rfind(':')]
         non_tzid_params = [prop]
         for param in params.split(';'):
             if param.startswith('TZID='):
@@ -329,7 +329,7 @@ END:VALARM'''
                     elif dtstart < no_alarm_before:
                         need_valarm = False
             elif line.startswith('DTSTART;') and dtstart is None:
-                dtstart = line[line.find(':') + 1:]
+                dtstart = line[line.rfind(':') + 1:]
 
                 new_line = convert_tz_date_to_utc('DTSTART', line, dtstart)
                 if new_line:
@@ -350,7 +350,7 @@ END:VALARM'''
             elif line.startswith('DTEND:') and dtend is None:
                 dtend = line[len('DTEND:'):]
             elif line.startswith('DTEND;') and dtend is None:
-                dtend = line[line.find(':') + 1:]
+                dtend = line[line.rfind(':') + 1:]
 
                 new_line = convert_tz_date_to_utc('DTEND', line, dtend)
                 if new_line:
