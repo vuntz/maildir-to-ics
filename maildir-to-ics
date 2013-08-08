@@ -80,6 +80,14 @@ MS_TIMEZONE_MAP = {
     'W. Europe Standard Time': 'Europe/Berlin'
 }
 
+WEIRD_TIMEZONE_MAP = {
+    '(UTC-06:00) Central Time (US & Canada)': 'America/Regina'
+}
+
+TIMEZONE_MAP = {}
+TIMEZONE_MAP.update(MS_TIMEZONE_MAP)
+TIMEZONE_MAP.update(WEIRD_TIMEZONE_MAP)
+
 
 def verbose_print(s, level=1):
     global VERBOSE
@@ -149,7 +157,7 @@ def hash_from_dir(directory):
 
 
 def convert_tz_date_to_utc(prop, line, dt):
-    global MS_TIMEZONE_MAP
+    global TIMEZONE_MAP
 
     try:
         tzid = None
@@ -171,8 +179,8 @@ def convert_tz_date_to_utc(prop, line, dt):
             tzid = tzid[1:-1]
 
         # Windows apps use Windows timezone names, that we need to translate
-        if tzid in MS_TIMEZONE_MAP:
-            tzid = MS_TIMEZONE_MAP[tzid]
+        if tzid in TIMEZONE_MAP:
+            tzid = TIMEZONE_MAP[tzid]
 
         try:
             year = int(dt[0:4])
