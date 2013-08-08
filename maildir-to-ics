@@ -74,14 +74,14 @@ VEVENTS_DATES = {}
 MS_TIMEZONE_MAP = {
     'Pacific Standard Time': 'America/Los_Angeles',
     'Mountain Standard Time': 'America/Phoenix',
-    'Central Standard Time': 'America/Regina',
+    'Central Standard Time': 'America/Mexico_City',
     'Eastern Standard Time': 'America/New_York',
     'Romance Standard Time': 'Europe/Paris',
     'W. Europe Standard Time': 'Europe/Berlin'
 }
 
 WEIRD_TIMEZONE_MAP = {
-    '(UTC-06:00) Central Time (US & Canada)': 'America/Regina'
+    '(UTC-06:00) Central Time (US & Canada)': 'America/Mexico_City'
 }
 
 TIMEZONE_MAP = {}
