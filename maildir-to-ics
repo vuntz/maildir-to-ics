@@ -73,16 +73,16 @@ VEVENTS_DATES = {}
 # http://msdn.microsoft.com/en-us/library/ms912391%28v=winembedded.11%29.aspx
 # FIXME: this is clearly incomplete...
 MS_TIMEZONE_MAP = {
-    'Pacific Standard Time': 'America/Los_Angeles',
-    'Mountain Standard Time': 'America/Phoenix',
-    'Central Standard Time': 'America/Mexico_City',
-    'Eastern Standard Time': 'America/New_York',
+    'Pacific Standard Time': 'US/Pacific',
+    'Mountain Standard Time': 'US/Mountain',
+    'Central Standard Time': 'US/Central',
+    'Eastern Standard Time': 'US/Eastern',
     'Romance Standard Time': 'Europe/Paris',
     'W. Europe Standard Time': 'Europe/Berlin'
 }
 
 WEIRD_TIMEZONE_MAP = {
-    '(UTC-06:00) Central Time (US & Canada)': 'America/Mexico_City'
+    '(UTC-06:00) Central Time (US & Canada)': 'US/Central'
 }
 
 TIMEZONE_MAP = {}
