@@ -32,6 +32,7 @@ import string
 import sys
 
 import ConfigParser
+import calendar
 import datetime
 import email
 import hashlib
@@ -227,7 +228,7 @@ def convert_tz_date_to_utc(prop, line, dt):
 
 
 def save_vevent(mail, vevent, uid, gwrecordid,
-                dtstamp, dtstart, dtend, save_dir):
+                rrule, dtstamp, dtstart, dtend, save_dir):
     global VEVENTS_DATES
 
     if gwrecordid:
@@ -276,6 +277,49 @@ def save_vevent(mail, vevent, uid, gwrecordid,
 
     VEVENTS_DATES[event_id] = (dtstart, dtend)
 
+    if rrule is not None:
+        if type(rrule) in (str, unicode):
+            # FIXME: Not fully correct: rrule is the last dtstart, not the last dtend
+            VEVENTS_DATES[event_id] = (dtstart, rrule)
+        elif len(dtend) > len('19700101'):
+            try:
+                (freq, count) = rrule
+                if count is None:
+                    # event is forever; we pretend it will stop in 100 years
+                    freq = 'YEARLY'
+                    count = 100
+
+                year = int(dtend[0:4])
+                month = int(dtend[4:6])
+                day = int(dtend[6:8])
+                date_dtend = datetime.date(year, month, day)
+
+                if freq == 'DAILY':
+                    delta = datetime.timedelta(days=count)
+                    date_dtend += delta
+                elif freq == 'WEEKLY':
+                    delta = datetime.timedelta(days=count*7)
+                    date_dtend += delta
+                elif freq == 'MONTHLY':
+                    # Based on http://stackoverflow.com/questions/4130922/how-to-increment-datetime-month-in-python
+                    # We could use the dateutil module, but let's not add a dependency
+                    month = month - 1 + count
+                    year = year + month / 12
+                    month = month % 12 + 1
+                    day = min(day, calendar.monthrange(year, month)[1])
+                    date_dtend = datetime.date(year, month, day)
+                elif freq == 'YEARLY':
+                    year += count
+                    date_dtend = datetime.date(year, month, day)
+                rrule_dtend = date_dtend.strftime('%Y%m%d')
+                VEVENTS_DATES[event_id] = (dtstart, rrule_dtend)
+            except:
+                verbose_print('Cannot parse RRULE \'%s\' in event ' \
+                              '\'%s\'.' % (rrule, event_id), 1)
+        else:
+            verbose_print('Cannot parse RRULE \'%s\' in event ' \
+                          '\'%s\'.' % (rrule, event_id), 1)
+
     fp = open(path, 'w')
     fp.write(vevent.encode('utf-8'))
     fp.close()
@@ -289,6 +333,7 @@ def save_events_from_vcalendar(mail, vcalendar, save_dir):
     vevent = None
     uid = None
     gwrecordid = None
+    rrule = None
     dtstamp = None
     dtstart = None
     dtend = None
@@ -319,12 +364,36 @@ END:VALARM'''
                     vevent.insert(-len(real_lines), valarm)
                 # Append final \n for EOL
                 save_vevent(mail, '\n'.join(vevent) + '\n', uid, gwrecordid,
-                            dtstamp, dtstart, dtend, save_dir)
+                            rrule, dtstamp, dtstart, dtend, save_dir)
                 vevent = None
             elif line.startswith('UID:') and uid is None:
                 uid = line[len('UID:'):]
             elif line.startswith('X-GWRECORDID:') and gwrecordid is None:
                 gwrecordid = line[len('X-GWRECORDID:'):]
+            elif line.startswith('RRULE:') and rrule is None:
+                rrule_freq = None
+                rrule_count = None
+                rrule_skip = False
+                for param in line[len('RRULE:'):].split(';'):
+                    if param.startswith('UNTIL='):
+                        rrule = param[len('UNTIL='):]
+                        break
+                    elif param.startswith('FREQ='):
+                        rrule_freq = param[len('FREQ='):].upper()
+                        if not rrule_freq in ('DAILY', 'WEEKLY', \
+                                              'MONTHLY', 'YEARLY'):
+                            verbose_print('Ignoring RRULE with minor FREQ ' \
+                                          '\'%s\'.' % rrule_freq, 2)
+                            rrule_skip = True
+                    elif param.startswith('COUNT='):
+                        try:
+                            rrule_count = int(param[len('COUNT='):])
+                        except ValueError:
+                            verbose_print('Cannot parse COUNT in RRULE ' \
+                                          '\'%s\'.' % line, 1)
+                            rrule_skip = True
+                if rrule is None and not rrule_skip and rrule_freq is not None:
+                    rrule = (rrule_freq, rrule_count)
             elif line.startswith('DTSTAMP:') and dtstamp is None:
                 dtstamp = line[len('DTSTAMP:'):]
             elif line.startswith('DTSTART:') and dtstart is None:
@@ -387,6 +456,7 @@ END:VALARM'''
             vevent = real_lines
             uid = None
             gwrecordid = None
+            rrule = None
             dtstamp = None
             dtstart = None
             dtend = None
