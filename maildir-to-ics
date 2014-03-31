@@ -85,9 +85,16 @@ WEIRD_TIMEZONE_MAP = {
     '(UTC-06:00) Central Time (US & Canada)': 'US/Central'
 }
 
+# EST / MST are not taking into account the daylight time
+DAYLIGHT_TIMEZONE_MAP = {
+    'EST': 'EST5EDT',
+    'MST': 'MST7MDT'
+}
+
 TIMEZONE_MAP = {}
 TIMEZONE_MAP.update(MS_TIMEZONE_MAP)
 TIMEZONE_MAP.update(WEIRD_TIMEZONE_MAP)
+TIMEZONE_MAP.update(DAYLIGHT_TIMEZONE_MAP)
 
 
 def verbose_print(s, level=1):
