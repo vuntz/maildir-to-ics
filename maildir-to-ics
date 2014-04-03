@@ -361,6 +361,10 @@ END:VALARM'''
 
     for (real_lines, line) in content.each_line():
         if vevent is not None:
+            # FIXME: we should really inline the attachment from the mime part,
+            # instead of dropping this line
+            if line == 'ATTACH:CID:...':
+                continue
             vevent.extend(real_lines)
             # FIXME: what if there's a duplicate UID/DTSTAMP/etc. line? Is it
             # correct to only keep first one?
