@@ -566,8 +566,8 @@ def write_ics_from_dir(directory, dest, limit_past, limit_future):
         fp = sys.stdout
 
     fp.write('BEGIN:VCALENDAR\n')
-    fp.write('PRODID:-//Vincent Untz//NONSGML maildir-to-ics//EN\n')
     fp.write('VERSION:2.0\n')
+    fp.write('PRODID:-//Vincent Untz//NONSGML maildir-to-ics//EN\n')
 
     filenames = os.listdir(directory)
     # sort to try to keep the generated file consistent if re-generated
