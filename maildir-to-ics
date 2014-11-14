@@ -37,6 +37,7 @@ import datetime
 import email
 import hashlib
 import optparse
+import re
 import shutil
 import time
 
@@ -82,9 +83,6 @@ MS_TIMEZONE_MAP = {
 }
 
 WEIRD_TIMEZONE_MAP = {
-    '(UTC-06:00) Central Time (US & Canada)': 'US/Central',
-    '(UTC+01:00) Amsterdam, Berlijn, Bern, Rome, Stockholm, Wenen': 'Europe/Amsterdam',
-    '(GMT+0100)': 'Europe/Berlin',
     'West-Europa (standaardtijd)': 'Europe/Amsterdam'
 }
 
@@ -93,6 +91,15 @@ DAYLIGHT_TIMEZONE_MAP = {
     'EST': 'EST5EDT',
     'MST': 'MST7MDT'
 }
+
+# Detect timezones like:
+#   (UTC-06:00) Central Time (US & Canada)
+#   (UTC+01:00) Amsterdam, Berlijn, Bern, Rome, Stockholm, Wenen
+#   (GMT+0100)
+#   GMT+0100
+#   GMT-0700
+# that we need to translate when using the TZ environment variable.
+REGEXP_TZ = re.compile("^\(?(GMT|UTC)([+-])(\d\d):?00\)?($| .*)")
 
 TIMEZONE_MAP = {}
 TIMEZONE_MAP.update(MS_TIMEZONE_MAP)
@@ -169,6 +176,7 @@ def hash_from_dir(directory):
 
 def convert_tz_date_to_utc(prop, line, dt):
     global TIMEZONE_MAP
+    global REGEXP_TZ
 
     try:
         tzid = None
@@ -192,6 +200,15 @@ def convert_tz_date_to_utc(prop, line, dt):
         # Windows apps use Windows timezone names, that we need to translate
         if tzid in TIMEZONE_MAP:
             tzid = TIMEZONE_MAP[tzid]
+        else:
+            match = REGEXP_TZ.match(tzid)
+            if match is not None:
+                if match.group(2) == '+':
+                    sign = '-'
+                else:
+                    sign = '+'
+                offset = match.group(3)
+                tzid = 'GMT%s%s' % (sign, offset)
 
         try:
             year = int(dt[0:4])
