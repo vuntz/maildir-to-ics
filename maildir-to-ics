@@ -84,6 +84,7 @@ MS_TIMEZONE_MAP = {
 WEIRD_TIMEZONE_MAP = {
     '(UTC-06:00) Central Time (US & Canada)': 'US/Central',
     '(UTC+01:00) Amsterdam, Berlijn, Bern, Rome, Stockholm, Wenen': 'Europe/Amsterdam',
+    '(GMT+0100)': 'Europe/Berlin',
     'West-Europa (standaardtijd)': 'Europe/Amsterdam'
 }
 
