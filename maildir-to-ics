@@ -78,6 +78,7 @@ MS_TIMEZONE_MAP = {
     'Mountain Standard Time': 'US/Mountain',
     'Central Standard Time': 'US/Central',
     'Eastern Standard Time': 'US/Eastern',
+    'GMT Standard Time': 'Europe/London',
     'Romance Standard Time': 'Europe/Paris',
     'W. Europe Standard Time': 'Europe/Berlin'
 }
@@ -240,7 +241,7 @@ def convert_tz_date_to_utc(prop, line, dt):
 
         # if there's no difference, and the TZID is not a known alias for UTC,
         # then we don't know how to deal with this timezone :/
-        if utc_dt == dt and tzid not in ['UTC', 'Etc/GMT']:
+        if utc_dt == dt and tzid not in ['UTC', 'Etc/GMT', 'Europe/London']:
             print >>sys.stderr, 'Cannot convert date with timezone to UTC ' \
                                 'in line \'%s\': cannot interpret timezone ' \
                                 '\'%s\'.' % (line, tzid)
