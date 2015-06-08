@@ -100,7 +100,7 @@ DAYLIGHT_TIMEZONE_MAP = {
 #   GMT+0100
 #   GMT-0700
 # that we need to translate when using the TZ environment variable.
-REGEXP_TZ = re.compile("^\(?(GMT|UTC)([+-])(\d\d):?00\)?($| .*)")
+REGEXP_TZ = re.compile("^\(?(GMT|UTC)([+-])(\d\d):?(\d\d)?\)?($| .*)")
 
 TIMEZONE_MAP = {}
 TIMEZONE_MAP.update(MS_TIMEZONE_MAP)
@@ -204,12 +204,18 @@ def convert_tz_date_to_utc(prop, line, dt):
         else:
             match = REGEXP_TZ.match(tzid)
             if match is not None:
-                if match.group(2) == '+':
-                    sign = '-'
+                offset_h = match.group(3)
+                offset_m = match.group(4)
+                if offset_m is None:
+                    offset_m = '00'
+                if offset_h == '00' and offset_m == '00':
+                    tzid = 'GMT'
                 else:
-                    sign = '+'
-                offset = match.group(3)
-                tzid = 'GMT%s%s' % (sign, offset)
+                    if match.group(2) == '+':
+                        sign = '-'
+                    else:
+                        sign = '+'
+                    tzid = 'GMT%s%s%s' % (sign, offset_h, offset_m)
 
         try:
             year = int(dt[0:4])
@@ -241,7 +247,7 @@ def convert_tz_date_to_utc(prop, line, dt):
 
         # if there's no difference, and the TZID is not a known alias for UTC,
         # then we don't know how to deal with this timezone :/
-        if utc_dt == dt and tzid not in ['UTC', 'Etc/GMT', 'Europe/London']:
+        if utc_dt == dt and tzid not in ['UTC', 'GMT', 'Etc/GMT', 'Europe/London']:
             print >>sys.stderr, 'Cannot convert date with timezone to UTC ' \
                                 'in line \'%s\': cannot interpret timezone ' \
                                 '\'%s\'.' % (line, tzid)
