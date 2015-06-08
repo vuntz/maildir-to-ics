@@ -84,7 +84,8 @@ MS_TIMEZONE_MAP = {
 }
 
 WEIRD_TIMEZONE_MAP = {
-    'West-Europa (standaardtijd)': 'Europe/Amsterdam'
+    'West-Europa (standaardtijd)': 'Europe/Amsterdam',
+    u'Mitteleuropäische Zeit': 'Europe/Berlin'
 }
 
 # EST / MST are not taking into account the daylight time
