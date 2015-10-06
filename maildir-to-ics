@@ -80,12 +80,14 @@ MS_TIMEZONE_MAP = {
     'Eastern Standard Time': 'US/Eastern',
     'GMT Standard Time': 'Europe/London',
     'Romance Standard Time': 'Europe/Paris',
-    'W. Europe Standard Time': 'Europe/Berlin'
+    'W. Europe Standard Time': 'Europe/Berlin',
+    'Tokyo Standard Time': 'Asia/Tokyo'
 }
 
 WEIRD_TIMEZONE_MAP = {
     'West-Europa (standaardtijd)': 'Europe/Amsterdam',
-    u'Mitteleuropäische Zeit': 'Europe/Berlin'
+    u'Mitteleuropäische Zeit': 'Europe/Berlin',
+    u'WesteuropÃ¤ische Normalzeit': 'Europe/Berlin'
 }
 
 # EST / MST are not taking into account the daylight time
