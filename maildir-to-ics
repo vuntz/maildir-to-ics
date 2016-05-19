@@ -48,16 +48,16 @@ Notes:
     without any other dependency than python.
   - we prefer X-GWRECORDID keys to UID when they exist, as GroupWise puts
     recurring events in multiple mails with the same UID.
-  - we do not keep VTIMEZONE objects, since they could conflict between
-    different mails. Instead, we convert the DTSTART/DTEND properties to UTC
-    when they are using a timezone.
+  - we keep VTIMEZONE objects (but only the first one we meet with a given
+    TZID) and we output only the ones that are in use by the vEvents.
 
 How this works:
-  - we have a cache of extracted vEvents from the maildir, to avoid re-parsing
-    all mails all the time. We use a "recursive checksum" to validate that
-    cache.
-  - we also have a cache of DTSTART/DTEND for each vEvent, to avoid re-parsing
-    the extracted vEvents. We also use a checksum to validate that cache.
+  - we have a cache of extracted vEvents/vTimezones from the maildir, to avoid
+    re-parsing all mails all the time. We use a "recursive checksum" to
+    validate that cache.
+  - we also have caches of DTSTART/DTEND and of used vTimezones for each
+    vEvent, to avoid re-parsing the extracted vEvents. We also use a checksum
+    to validate these caches.
   - we avoid rebuilding the iCalendar file if the caches are valid, and the
     time period for the vEvents to consider didn't change.
   - we simply concatenate all files together to build the resulting iCalendar
@@ -70,45 +70,7 @@ BROKEN_UTF8 = False
 PREVIOUS_RUN_SECTION = 'previous'
 VERBOSE = 0
 VEVENTS_DATES = {}
-
-# http://msdn.microsoft.com/en-us/library/ms912391%28v=winembedded.11%29.aspx
-# FIXME: this is clearly incomplete...
-MS_TIMEZONE_MAP = {
-    'Pacific Standard Time': 'US/Pacific',
-    'Mountain Standard Time': 'US/Mountain',
-    'Central Standard Time': 'US/Central',
-    'Eastern Standard Time': 'US/Eastern',
-    'GMT Standard Time': 'Europe/London',
-    'Romance Standard Time': 'Europe/Paris',
-    'W. Europe Standard Time': 'Europe/Berlin',
-    'Tokyo Standard Time': 'Asia/Tokyo'
-}
-
-WEIRD_TIMEZONE_MAP = {
-    'West-Europa (standaardtijd)': 'Europe/Amsterdam',
-    u'Mitteleuropäische Zeit': 'Europe/Berlin',
-    u'WesteuropÃ¤ische Normalzeit': 'Europe/Berlin'
-}
-
-# EST / MST are not taking into account the daylight time
-DAYLIGHT_TIMEZONE_MAP = {
-    'EST': 'EST5EDT',
-    'MST': 'MST7MDT'
-}
-
-# Detect timezones like:
-#   (UTC-06:00) Central Time (US & Canada)
-#   (UTC+01:00) Amsterdam, Berlijn, Bern, Rome, Stockholm, Wenen
-#   (GMT+0100)
-#   GMT+0100
-#   GMT-0700
-# that we need to translate when using the TZ environment variable.
-REGEXP_TZ = re.compile("^\(?(GMT|UTC)([+-])(\d\d):?(\d\d)?\)?($| .*)")
-
-TIMEZONE_MAP = {}
-TIMEZONE_MAP.update(MS_TIMEZONE_MAP)
-TIMEZONE_MAP.update(WEIRD_TIMEZONE_MAP)
-TIMEZONE_MAP.update(DAYLIGHT_TIMEZONE_MAP)
+VEVENTS_TZIDS = {}
 
 
 def verbose_print(s, level=1):
@@ -178,95 +140,28 @@ def hash_from_dir(directory):
     return dir_hash.hexdigest()
 
 
-def convert_tz_date_to_utc(prop, line, dt):
-    global TIMEZONE_MAP
-    global REGEXP_TZ
-
+def extract_tzid(prop, line):
     try:
         tzid = None
         params = line[len(prop + ';'):line.rfind(':')]
-        non_tzid_params = [prop]
         for param in params.split(';'):
-            if param.startswith('TZID='):
-                tzid = param[len('TZID='):]
-            else:
-                non_tzid_params.append(param)
+            if not param.startswith('TZID='):
+                continue
 
-        if not tzid:
-            return None
-        if not len(dt) == len('19700101T000000') or dt[8] != 'T':
-            return None
+            tzid = param[len('TZID='):]
+            break
 
-        # Sometimes, it seems the timezone is quoted
-        if tzid[0] == '"' and tzid[-1] == '"':
-            tzid = tzid[1:-1]
-
-        # Windows apps use Windows timezone names, that we need to translate
-        if tzid in TIMEZONE_MAP:
-            tzid = TIMEZONE_MAP[tzid]
-        else:
-            match = REGEXP_TZ.match(tzid)
-            if match is not None:
-                offset_h = match.group(3)
-                offset_m = match.group(4)
-                if offset_m is None:
-                    offset_m = '00'
-                if offset_h == '00' and offset_m == '00':
-                    tzid = 'GMT'
-                else:
-                    if match.group(2) == '+':
-                        sign = '-'
-                    else:
-                        sign = '+'
-                    tzid = 'GMT%s%s%s' % (sign, offset_h, offset_m)
-
-        try:
-            year = int(dt[0:4])
-            month = int(dt[4:6])
-            day = int(dt[6:8])
-            hour = int(dt[9:11])
-            minute = int(dt[11:13])
-            second = int(dt[13:15])
-        except ValueError:
-            verbose_print('Cannot parse date \'%s\'.' % dt, 1)
-            return None
-
-        # Change the timezone to the one defined in the date so that we use the
-        # system to convert the time in that timezone to UTC time
-        prefix = ';'.join(non_tzid_params) + ':'
-        old_tzid = os.environ.get('TZ', None)
-        os.environ['TZ'] = tzid
-        time.tzset()
-
-        dt_datetime = datetime.datetime(year, month, day, hour, minute, second)
-        dt_time = time.mktime(dt_datetime.timetuple())
-        utc_dt = time.strftime("%Y%m%dT%H%M%S", time.gmtime(dt_time))
-
-        if old_tzid:
-            os.environ['TZ'] = old_tzid
-        else:
-            del os.environ['TZ']
-        time.tzset()
-
-        # if there's no difference, and the TZID is not a known alias for UTC,
-        # then we don't know how to deal with this timezone :/
-        if utc_dt == dt and tzid not in ['UTC', 'GMT', 'Etc/GMT', 'Europe/London']:
-            print >>sys.stderr, 'Cannot convert date with timezone to UTC ' \
-                                'in line \'%s\': cannot interpret timezone ' \
-                                '\'%s\'.' % (line, tzid)
-            return None
-
-        # trailing "Z" to say this is UTC
-        return prefix + utc_dt + 'Z'
+        return tzid
     except Exception, e:
-        print >>sys.stderr, 'Cannot convert date with timezone to UTC ' \
+        print >>sys.stderr, 'Cannot extract timezone ' \
                             'in line \'%s\': %s.' % (line, e)
         return None
 
 
 def save_vevent(mail, vevent, uid, gwrecordid,
-                rrule, dtstamp, dtstart, dtend, save_dir):
+                rrule, dtstamp, dtstart, dtend, tzids, save_dir):
     global VEVENTS_DATES
+    global VEVENTS_TZIDS
 
     if gwrecordid:
         event_id = gwrecordid
@@ -313,6 +208,8 @@ def save_vevent(mail, vevent, uid, gwrecordid,
             return
 
     VEVENTS_DATES[event_id] = (dtstart, dtend)
+    if len(tzids) > 0:
+        VEVENTS_TZIDS[event_id] = tzids
 
     if rrule is not None:
         if type(rrule) in (str, unicode):
@@ -362,10 +259,33 @@ def save_vevent(mail, vevent, uid, gwrecordid,
     fp.close()
 
 
-def save_events_from_vcalendar(mail, vcalendar, save_dir):
+def save_vtimezone(mail, vtimezone, tzid, save_dir):
+    if tzid:
+        filename = filter(lambda x: x in string.printable and x != '/',
+                          tzid)
+    else:
+        print >>sys.stderr, 'Ignoring timezone with no TZID in \'%s\'' % mail
+        return
+
+    path = os.path.join(save_dir, filename)
+    if os.path.exists(path):
+        verbose_print('Timezone \'%s\' already exists, not ' \
+                      'overwriting.' % tzid.encode('utf-8'),
+                      3)
+        return
+
+    fp = open(path, 'w')
+    fp.write(vtimezone.encode('utf-8'))
+    fp.close()
+
+
+def save_events_from_vcalendar(mail, vcalendar, vevents_save_dir, vtimezones_save_dir):
     global ADD_ALARM
 
     content = LineUnwrapper(vcalendar)
+
+    vtimezone = None
+    tzid = None
 
     vevent = None
     uid = None
@@ -374,6 +294,7 @@ def save_events_from_vcalendar(mail, vcalendar, save_dir):
     dtstamp = None
     dtstart = None
     dtend = None
+    used_tzids = set()
 
     need_valarm = ADD_ALARM
     valarm = '''BEGIN:VALARM
@@ -405,7 +326,8 @@ END:VALARM'''
                     vevent.insert(-len(real_lines), valarm)
                 # Append final \n for EOL
                 save_vevent(mail, '\n'.join(vevent) + '\n', uid, gwrecordid,
-                            rrule, dtstamp, dtstart, dtend, save_dir)
+                            rrule, dtstamp, dtstart, dtend, used_tzids,
+                            vevents_save_dir)
                 vevent = None
             elif line.startswith('UID:') and uid is None:
                 uid = line[len('UID:'):]
@@ -448,16 +370,9 @@ END:VALARM'''
                         need_valarm = False
             elif line.startswith('DTSTART;') and dtstart is None:
                 dtstart = line[line.rfind(':') + 1:]
-
-                new_line = convert_tz_date_to_utc('DTSTART', line, dtstart)
-                if new_line:
-                    # replace old line with new UTC line
-                    if len(real_lines) == 1:
-                        vevent[-1] = new_line
-                    else:
-                        vevent = vevent[:-len(real_lines)]
-                        vevent.append(new_line)
-
+                dtstart_tzid = extract_tzid('DTSTART', line)
+                if dtstart_tzid is not None:
+                    used_tzids.add(dtstart_tzid)
                 if need_valarm:
                     # event with a all-day DTSTART are most-likely all-day
                     # events
@@ -469,15 +384,9 @@ END:VALARM'''
                 dtend = line[len('DTEND:'):]
             elif line.startswith('DTEND;') and dtend is None:
                 dtend = line[line.rfind(':') + 1:]
-
-                new_line = convert_tz_date_to_utc('DTEND', line, dtend)
-                if new_line:
-                    # replace old line with new UTC line
-                    if len(real_lines) == 1:
-                        vevent[-1] = new_line
-                    else:
-                        vevent = vevent[:-len(real_lines)]
-                        vevent.append(new_line)
+                dtend_tzid = extract_tzid('DTEND', line)
+                if dtend_tzid is not None:
+                    used_tzids.add(dtend_tzid)
             elif need_valarm:
                 if line.startswith('X-GWITEM-TYPE:'):
                     value = line[len('X-GWITEM-TYPE:'):].lower()
@@ -493,6 +402,15 @@ END:VALARM'''
                         need_valarm = False
                 elif line == 'BEGIN:VALARM':
                     need_valarm = False
+        elif vtimezone is not None:
+            vtimezone.extend(real_lines)
+            if line == 'END:VTIMEZONE':
+                # Append final \n for EOL
+                save_vtimezone(mail, '\n'.join(vtimezone) + '\n', tzid,
+                               vtimezones_save_dir)
+                vtimezone = None
+            elif line.startswith('TZID:') and tzid is None:
+                tzid = line[len('TZID:'):]
         elif line == 'BEGIN:VEVENT':
             vevent = real_lines
             uid = None
@@ -501,13 +419,17 @@ END:VALARM'''
             dtstamp = None
             dtstart = None
             dtend = None
+            used_tzids = set()
             need_valarm = ADD_ALARM
+        elif line == 'BEGIN:VTIMEZONE':
+            vtimezone = real_lines
+            tzid = None
 
-    if vevent is not None:
+    if vevent is not None or vtimezone is not None:
         verbose_print('Invalid vCalendar in \'%s\'.' % mail, 2)
 
 
-def save_events_from_mail(filename, save_dir):
+def save_events_from_mail(filename, vevents_save_dir, vtimezones_save_dir):
     global BROKEN_UTF8
 
     if not os.path.exists(filename):
@@ -563,10 +485,10 @@ def save_events_from_mail(filename, save_dir):
 
             vcalendar = reencoded
 
-        save_events_from_vcalendar(filename, vcalendar, save_dir)
+        save_events_from_vcalendar(filename, vcalendar, vevents_save_dir, vtimezones_save_dir)
 
 
-def save_events_from_mails_in_dir(directory, save_dir):
+def save_events_from_mails_in_dir(directory, vevents_save_dir, vtimezones_save_dir):
     if not os.path.isdir(directory):
         print >>sys.stderr, 'Non-existing Maildir subdirectory ' \
                             '\'%s\'???' % directory
@@ -577,28 +499,23 @@ def save_events_from_mails_in_dir(directory, save_dir):
         if not os.path.isfile(path):
             verbose_print('Skipping \'%s\': not a file.' % path, 1)
             continue
-        save_events_from_mail(path, save_dir)
+        save_events_from_mail(path, vevents_save_dir, vtimezones_save_dir)
 
 
-def save_events_from_maildir(directory, save_dir):
+def save_events_from_maildir(directory, vevents_save_dir, vtimezones_save_dir):
     for subdir in ['cur', 'new', 'tmp']:
         path = os.path.join(directory, subdir)
-        save_events_from_mails_in_dir(path, save_dir)
+        save_events_from_mails_in_dir(path, vevents_save_dir, vtimezones_save_dir)
 
 
-def write_ics_from_dir(directory, dest, limit_past, limit_future):
+def write_ics_from_dir(vevents_directory, vtimezones_directory, dest, limit_past, limit_future):
     global VEVENTS_DATES
+    global VEVENTS_TZIDS
 
-    if dest is not None:
-        fp = open(dest, 'w')
-    else:
-        fp = sys.stdout
+    relevant_vevents = []
+    relevant_tzid = set()
 
-    fp.write('BEGIN:VCALENDAR\n')
-    fp.write('VERSION:2.0\n')
-    fp.write('PRODID:-//Vincent Untz//NONSGML maildir-to-ics//EN\n')
-
-    filenames = os.listdir(directory)
+    filenames = os.listdir(vevents_directory)
     # sort to try to keep the generated file consistent if re-generated
     filenames.sort()
 
@@ -614,7 +531,34 @@ def write_ics_from_dir(directory, dest, limit_past, limit_future):
                               'in the past.' % filename, 3)
                 continue
 
-        path = os.path.join(directory, filename)
+        relevant_vevents.append(filename)
+        if filename in VEVENTS_TZIDS:
+            relevant_tzid.update(VEVENTS_TZIDS[filename])
+
+    if dest is not None:
+        fp = open(dest, 'w')
+    else:
+        fp = sys.stdout
+
+    fp.write('BEGIN:VCALENDAR\n')
+    fp.write('VERSION:2.0\n')
+    fp.write('PRODID:-//Vincent Untz//NONSGML maildir-to-ics//EN\n')
+
+    for tzid in sorted(list(relevant_tzid)):
+        path = os.path.join(vtimezones_directory, tzid)
+        if not os.path.exists(path):
+            verbose_print('Non-existing vTimezone referenced with \'%s\'.' % tzid, 1)
+            continue
+        timezone = open(path, 'rb')
+        while True:
+            buf = timezone.read(4096)
+            if not buf:
+                break
+            fp.write(buf)
+        timezone.close()
+
+    for filename in relevant_vevents:
+        path = os.path.join(vevents_directory, filename)
         event = open(path, 'rb')
         while True:
             buf = event.read(4096)
@@ -634,6 +578,7 @@ def main(args):
     global PREVIOUS_RUN_SECTION
     global VERBOSE
     global VEVENTS_DATES
+    global VEVENTS_TZIDS
 
     usage_str = 'usage: %prog [options] --maildir=PATH'
     parser = optparse.OptionParser(usage=usage_str)
@@ -724,7 +669,9 @@ def main(args):
 
     old_mails_hash = None
     old_vevents_cache_hash = None
+    old_vtimezones_cache_hash = None
     old_vevents_dates_hash = None
+    old_vevents_tzids_hash = None
     old_add_alarm = None
     old_broken_utf8 = None
     old_limit_past = None
@@ -740,9 +687,15 @@ def main(args):
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'vevents_cache'):
         old_vevents_cache_hash = previous_run.get(PREVIOUS_RUN_SECTION,
                                                   'vevents_cache')
+    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'vtimezones_cache'):
+        old_vtimezones_cache_hash = previous_run.get(PREVIOUS_RUN_SECTION,
+                                                     'vtimezones_cache')
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'vevents_dates'):
         old_vevents_dates_hash = previous_run.get(PREVIOUS_RUN_SECTION,
                                                   'vevents_dates')
+    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'vevents_tzids'):
+        old_vevents_tzids_hash = previous_run.get(PREVIOUS_RUN_SECTION,
+                                                  'vevents_tzids')
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'add_alarm'):
         old_add_alarm = previous_run.get(PREVIOUS_RUN_SECTION,
                                          'add_alarm')
@@ -762,8 +715,11 @@ def main(args):
     new_mails_hash = hash_from_dir(maildir)
     previous_run.set(PREVIOUS_RUN_SECTION, 'mails', new_mails_hash)
 
-    cache_dir = os.path.join(info_dir, 'vevents')
-    cache_dir_exists = os.path.exists(cache_dir)
+    vevents_cache_dir = os.path.join(info_dir, 'vevents')
+    vevents_cache_dir_exists = os.path.exists(vevents_cache_dir)
+
+    vtimezones_cache_dir = os.path.join(info_dir, 'vtimezones')
+    vtimezones_cache_dir_exists = os.path.exists(vtimezones_cache_dir)
 
     vevents_dates = os.path.join(info_dir, 'vevents_dates')
     if os.path.exists(vevents_dates):
@@ -771,11 +727,19 @@ def main(args):
     else:
         current_vevents_dates_hash = 'non-existing'
 
+    vevents_tzids = os.path.join(info_dir, 'vevents_tzids')
+    if os.path.exists(vevents_tzids):
+        current_vevents_tzid_hash = hash_from_file(vevents_tzids)
+    else:
+        current_vevents_tzid_hash = 'non-existing'
+
     need_to_rebuild_cache = False
 
     if force or old_mails_hash != new_mails_hash or \
-        not cache_dir_exists or \
+        not vevents_cache_dir_exists or \
+        not vtimezones_cache_dir_exists or \
         old_vevents_dates_hash != current_vevents_dates_hash or \
+        old_vevents_tzids_hash != current_vevents_tzid_hash or \
         old_add_alarm != str(ADD_ALARM) or \
         old_broken_utf8 != str(BROKEN_UTF8):
         need_to_rebuild_cache = True
@@ -789,7 +753,7 @@ def main(args):
             if len(elements) != 3:
                 verbose_print('Line \'%s\' in \'%s\' is ' 'invalid.' %
                               (line, vevent_dates), 1)
-                # file os corrupted, we'll regenerate it
+                # file is corrupted, we'll regenerate it
                 need_to_rebuild_cache = True
                 VEVENTS_DATES = {}
                 break
@@ -797,16 +761,41 @@ def main(args):
             VEVENTS_DATES[uid] = (dtstart, dtend)
         fp.close()
 
+        fp = open(vevents_tzids, 'r')
+        for line in fp.readlines():
+            if line[-1] == '\n':
+                line = line[:-1]
+            elements = line.split('\t', 2)
+            if len(elements) != 2:
+                verbose_print('Line \'%s\' in \'%s\' is ' 'invalid.' %
+                              (line, vevent_tzid), 1)
+                # file is corrupted, we'll regenerate it
+                need_to_rebuild_cache = True
+                VEVENTS_TZIDS = {}
+                break
+            (uid, tzids) = elements
+            tzids_set = set(tzids.split('\t'))
+            if len(tzids_set) > 0:
+                VEVENTS_TZIDS[uid] = tzids_set
+        fp.close()
+
     if need_to_rebuild_cache:
         verbose_print('Rebuilding vEvents cache.', 1)
-        if cache_dir_exists:
-            shutil.rmtree(cache_dir)
-        os.makedirs(cache_dir)
-        save_events_from_maildir(maildir, cache_dir)
+        if vevents_cache_dir_exists:
+            shutil.rmtree(vevents_cache_dir)
+        os.makedirs(vevents_cache_dir)
+        if vtimezones_cache_dir_exists:
+            shutil.rmtree(vtimezones_cache_dir)
+        os.makedirs(vtimezones_cache_dir)
+        save_events_from_maildir(maildir, vevents_cache_dir, vtimezones_cache_dir)
 
-        new_vevents_cache_hash = hash_from_dir(cache_dir)
+        new_vevents_cache_hash = hash_from_dir(vevents_cache_dir)
         previous_run.set(PREVIOUS_RUN_SECTION,
                          'vevents_cache', new_vevents_cache_hash)
+
+        new_vtimezones_cache_hash = hash_from_dir(vtimezones_cache_dir)
+        previous_run.set(PREVIOUS_RUN_SECTION,
+                         'vtimezones_cache', new_vtimezones_cache_hash)
 
         previous_run.set(PREVIOUS_RUN_SECTION,
                          'add_alarm', str(ADD_ALARM))
@@ -824,9 +813,25 @@ def main(args):
         new_vevents_dates_hash = dates_hash.hexdigest()
         previous_run.set(PREVIOUS_RUN_SECTION,
                          'vevents_dates', new_vevents_dates_hash)
+
+        tzid_hash = hashlib.md5()
+        fp = open(vevents_tzids, 'w')
+        for (uid, tzids) in VEVENTS_TZIDS.iteritems():
+            sorted_tzids = sorted(list(tzids))
+            line = '%s\t%s\n' % (uid, '\t'.join(sorted_tzids))
+            utf8_line = line.encode('utf-8')
+            fp.write(utf8_line)
+            tzid_hash.update(utf8_line)
+        fp.close()
+
+        new_vevents_tzids_hash = tzid_hash.hexdigest()
+        previous_run.set(PREVIOUS_RUN_SECTION,
+                         'vevents_tzids', new_vevents_tzids_hash)
     else:
         new_vevents_cache_hash = old_vevents_cache_hash
+        new_vtimezones_cache_hash = old_vtimezones_cache_hash
         new_vevents_dates_hash = old_vevents_dates_hash
+        new_vevents_tzids_hash = old_vevents_tzids_hash
         verbose_print('No need to rebuild vEvents cache: '
                       'no change compared to last run.', 1)
 
@@ -841,7 +846,9 @@ def main(args):
     # relatedly: no need to regenerate previous-run.ini if ics isn't
     # regenerated
     if force or old_vevents_cache_hash != new_vevents_cache_hash or \
+        old_vtimezones_cache_hash != new_vtimezones_cache_hash or \
         old_vevents_dates_hash != new_vevents_dates_hash or \
+        old_vevents_tzids_hash != new_vevents_tzids_hash or \
         old_limit_past != limit_past or \
         old_limit_future != limit_future or \
         dest_ics is None or \
@@ -850,7 +857,8 @@ def main(args):
         verbose_print('Regenerating vCalendar.', 1)
 
         try:
-            write_ics_from_dir(cache_dir, dest_ics, limit_past, limit_future)
+            write_ics_from_dir(vevents_cache_dir, vtimezones_cache_dir,
+                               dest_ics, limit_past, limit_future)
         except IOError, e:
             # ignore broken pipe for stdout
             if dest_ics is None and e.errno != errno.EPIPE:
