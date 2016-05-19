@@ -156,14 +156,18 @@ def extract_tzid(prop, line):
         return None
 
 
+def id_to_filename(unfiltered_id):
+    return filter(lambda x: x in string.printable and x != '/' and x != '"',
+                  unfiltered_id)
+
+
 def save_vevent(mail, vevent, uid,
                 rrule, dtstamp, dtstart, dtend, tzids, save_dir):
     global VEVENTS_DATES
     global VEVENTS_TZIDS
 
     if uid:
-        filename = filter(lambda x: x in string.printable and x != '/',
-                          uid)
+        filename = id_to_filename(uid)
     else:
         print >>sys.stderr, 'Ignoring event with no UID in \'%s\'' % mail
         return
@@ -200,14 +204,14 @@ def save_vevent(mail, vevent, uid,
                           'not overwriting.' % uid, 2)
             return
 
-    VEVENTS_DATES[uid] = (dtstart, dtend)
+    VEVENTS_DATES[filename] = (dtstart, dtend)
     if len(tzids) > 0:
-        VEVENTS_TZIDS[uid] = tzids
+        VEVENTS_TZIDS[filename] = tzids
 
     if rrule is not None:
         if type(rrule) in (str, unicode):
             # FIXME: Not fully correct: rrule is the last dtstart, not the last dtend
-            VEVENTS_DATES[uid] = (dtstart, rrule)
+            VEVENTS_DATES[filename] = (dtstart, rrule)
         elif len(dtend) > len('19700101'):
             try:
                 (freq, count) = rrule
@@ -239,7 +243,7 @@ def save_vevent(mail, vevent, uid,
                     year += count
                     date_dtend = datetime.date(year, month, day)
                 rrule_dtend = date_dtend.strftime('%Y%m%d')
-                VEVENTS_DATES[uid] = (dtstart, rrule_dtend)
+                VEVENTS_DATES[filename] = (dtstart, rrule_dtend)
             except:
                 verbose_print('Cannot parse RRULE \'%s\' in event ' \
                               '\'%s\'.' % (rrule, uid), 1)
@@ -254,8 +258,7 @@ def save_vevent(mail, vevent, uid,
 
 def save_vtimezone(mail, vtimezone, tzid, save_dir):
     if tzid:
-        filename = filter(lambda x: x in string.printable and x != '/',
-                          tzid)
+        filename = id_to_filename(tzid)
     else:
         print >>sys.stderr, 'Ignoring timezone with no TZID in \'%s\'' % mail
         return
@@ -534,7 +537,7 @@ def write_ics_from_dir(vevents_directory, vtimezones_directory, dest, limit_past
     fp.write('PRODID:-//Vincent Untz//NONSGML maildir-to-ics//EN\n')
 
     for tzid in sorted(list(relevant_tzid)):
-        path = os.path.join(vtimezones_directory, tzid)
+        path = os.path.join(vtimezones_directory, id_to_filename(tzid))
         if not os.path.exists(path):
             verbose_print('Non-existing vTimezone referenced with \'%s\'.' % tzid, 1)
             continue
@@ -762,10 +765,10 @@ def main(args):
                 need_to_rebuild_cache = True
                 VEVENTS_TZIDS = {}
                 break
-            (uid, tzids) = elements
+            (event_filename, tzids) = elements
             tzids_set = set(tzids.split('\t'))
             if len(tzids_set) > 0:
-                VEVENTS_TZIDS[uid] = tzids_set
+                VEVENTS_TZIDS[event_filename] = tzids_set
         fp.close()
 
     if need_to_rebuild_cache:
@@ -793,8 +796,8 @@ def main(args):
 
         dates_hash = hashlib.md5()
         fp = open(vevents_dates, 'w')
-        for (uid, (dtstart, dtend)) in VEVENTS_DATES.iteritems():
-            line = '%s\t%s\t%s\n' % (uid, dtstart, dtend)
+        for (event_filename, (dtstart, dtend)) in VEVENTS_DATES.iteritems():
+            line = '%s\t%s\t%s\n' % (event_filename, dtstart, dtend)
             fp.write(line)
             dates_hash.update(line)
         fp.close()
@@ -805,9 +808,9 @@ def main(args):
 
         tzid_hash = hashlib.md5()
         fp = open(vevents_tzids, 'w')
-        for (uid, tzids) in VEVENTS_TZIDS.iteritems():
+        for (event_filename, tzids) in VEVENTS_TZIDS.iteritems():
             sorted_tzids = sorted(list(tzids))
-            line = '%s\t%s\n' % (uid, '\t'.join(sorted_tzids))
+            line = '%s\t%s\n' % (event_filename, '\t'.join(sorted_tzids))
             utf8_line = line.encode('utf-8')
             fp.write(utf8_line)
             tzid_hash.update(utf8_line)
