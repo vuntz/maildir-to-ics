@@ -46,8 +46,6 @@ import time
 Notes:
   - we do not use python-vobject for parsing vEvents, to allow using this
     without any other dependency than python.
-  - we prefer X-GWRECORDID keys to UID when they exist, as GroupWise puts
-    recurring events in multiple mails with the same UID.
   - we keep VTIMEZONE objects (but only the first one we meet with a given
     TZID) and we output only the ones that are in use by the vEvents.
 
@@ -158,19 +156,14 @@ def extract_tzid(prop, line):
         return None
 
 
-def save_vevent(mail, vevent, uid, gwrecordid,
+def save_vevent(mail, vevent, uid,
                 rrule, dtstamp, dtstart, dtend, tzids, save_dir):
     global VEVENTS_DATES
     global VEVENTS_TZIDS
 
-    if gwrecordid:
-        event_id = gwrecordid
-    else:
-        event_id = uid
-
-    if event_id:
+    if uid:
         filename = filter(lambda x: x in string.printable and x != '/',
-                          event_id)
+                          uid)
     else:
         print >>sys.stderr, 'Ignoring event with no UID in \'%s\'' % mail
         return
@@ -201,20 +194,20 @@ def save_vevent(mail, vevent, uid, gwrecordid,
 
         if dtstamp > old_dtstamp:
             verbose_print('Duplicate event \'%s\' with newer DTSTAMP, '
-                          'overwriting.' % event_id, 2)
+                          'overwriting.' % uid, 2)
         else:
             verbose_print('Duplicate event \'%s\' with same or older DTSTAMP, '
-                          'not overwriting.' % event_id, 2)
+                          'not overwriting.' % uid, 2)
             return
 
-    VEVENTS_DATES[event_id] = (dtstart, dtend)
+    VEVENTS_DATES[uid] = (dtstart, dtend)
     if len(tzids) > 0:
-        VEVENTS_TZIDS[event_id] = tzids
+        VEVENTS_TZIDS[uid] = tzids
 
     if rrule is not None:
         if type(rrule) in (str, unicode):
             # FIXME: Not fully correct: rrule is the last dtstart, not the last dtend
-            VEVENTS_DATES[event_id] = (dtstart, rrule)
+            VEVENTS_DATES[uid] = (dtstart, rrule)
         elif len(dtend) > len('19700101'):
             try:
                 (freq, count) = rrule
@@ -246,13 +239,13 @@ def save_vevent(mail, vevent, uid, gwrecordid,
                     year += count
                     date_dtend = datetime.date(year, month, day)
                 rrule_dtend = date_dtend.strftime('%Y%m%d')
-                VEVENTS_DATES[event_id] = (dtstart, rrule_dtend)
+                VEVENTS_DATES[uid] = (dtstart, rrule_dtend)
             except:
                 verbose_print('Cannot parse RRULE \'%s\' in event ' \
-                              '\'%s\'.' % (rrule, event_id), 1)
+                              '\'%s\'.' % (rrule, uid), 1)
         else:
             verbose_print('Cannot parse RRULE \'%s\' in event ' \
-                          '\'%s\'.' % (rrule, event_id), 1)
+                          '\'%s\'.' % (rrule, uid), 1)
 
     fp = open(path, 'w')
     fp.write(vevent.encode('utf-8'))
@@ -289,7 +282,6 @@ def save_events_from_vcalendar(mail, vcalendar, vevents_save_dir, vtimezones_sav
 
     vevent = None
     uid = None
-    gwrecordid = None
     rrule = None
     dtstamp = None
     dtstart = None
@@ -325,14 +317,12 @@ END:VALARM'''
                     # insert before the END:VEVENT
                     vevent.insert(-len(real_lines), valarm)
                 # Append final \n for EOL
-                save_vevent(mail, '\n'.join(vevent) + '\n', uid, gwrecordid,
+                save_vevent(mail, '\n'.join(vevent) + '\n', uid,
                             rrule, dtstamp, dtstart, dtend, used_tzids,
                             vevents_save_dir)
                 vevent = None
             elif line.startswith('UID:') and uid is None:
                 uid = line[len('UID:'):]
-            elif line.startswith('X-GWRECORDID:') and gwrecordid is None:
-                gwrecordid = line[len('X-GWRECORDID:'):]
             elif line.startswith('RRULE:') and rrule is None:
                 rrule_freq = None
                 rrule_count = None
@@ -414,7 +404,6 @@ END:VALARM'''
         elif line == 'BEGIN:VEVENT':
             vevent = real_lines
             uid = None
-            gwrecordid = None
             rrule = None
             dtstamp = None
             dtstart = None
