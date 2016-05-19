@@ -212,7 +212,8 @@ def save_vevent(mail, vevent, uid,
         if type(rrule) in (str, unicode):
             # FIXME: Not fully correct: rrule is the last dtstart, not the last dtend
             VEVENTS_DATES[filename] = (dtstart, rrule)
-        elif len(dtend) > len('19700101'):
+        # all day events might be recurring too
+        elif len(dtend) >= len('19700101'):
             try:
                 (freq, count) = rrule
                 if count is None:
