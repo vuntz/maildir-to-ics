@@ -36,6 +36,7 @@ import calendar
 import datetime
 import email
 import hashlib
+import io
 import optparse
 import re
 import shutil
@@ -529,20 +530,20 @@ def write_ics_from_dir(vevents_directory, vtimezones_directory, dest, limit_past
             relevant_tzid.update(VEVENTS_TZIDS[filename])
 
     if dest is not None:
-        fp = open(dest, 'w')
+        fp = io.open(dest, 'w', newline='\r\n')
     else:
         fp = sys.stdout
 
-    fp.write('BEGIN:VCALENDAR\n')
-    fp.write('VERSION:2.0\n')
-    fp.write('PRODID:-//Vincent Untz//NONSGML maildir-to-ics//EN\n')
+    fp.write(u'BEGIN:VCALENDAR\n')
+    fp.write(u'VERSION:2.0\n')
+    fp.write(u'PRODID:-//Vincent Untz//NONSGML maildir-to-ics//EN\n')
 
     for tzid in sorted(list(relevant_tzid)):
         path = os.path.join(vtimezones_directory, id_to_filename(tzid))
         if not os.path.exists(path):
             verbose_print('Non-existing vTimezone referenced with \'%s\'.' % tzid, 1)
             continue
-        timezone = open(path, 'rb')
+        timezone = io.open(path, 'r')
         while True:
             buf = timezone.read(4096)
             if not buf:
@@ -552,7 +553,7 @@ def write_ics_from_dir(vevents_directory, vtimezones_directory, dest, limit_past
 
     for filename in relevant_vevents:
         path = os.path.join(vevents_directory, filename)
-        event = open(path, 'rb')
+        event = io.open(path, 'r')
         while True:
             buf = event.read(4096)
             if not buf:
@@ -560,7 +561,7 @@ def write_ics_from_dir(vevents_directory, vtimezones_directory, dest, limit_past
             fp.write(buf)
         event.close()
 
-    fp.write('END:VCALENDAR\n')
+    fp.write(u'END:VCALENDAR\n')
     if dest is not None:
         fp.close()
 
