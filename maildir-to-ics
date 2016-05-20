@@ -356,6 +356,14 @@ END:VALARM'''
                 dtstamp = line[len('DTSTAMP:'):]
             elif line.startswith('DTSTART:') and dtstart is None:
                 dtstart = line[len('DTSTART:'):]
+                if len(dtstart) == len('19700101'):
+                    # broken vEvent: default value type is DATE-TIME
+                    new_line = 'DTSTART;VALUE=DATE:%s' % dtstart
+                    if len(real_lines) == 1:
+                        vevent[-1] = new_line
+                    else:
+                        vevent = vevent[:-len(real_lines)]
+                        vevent.append(new_line)
                 if need_valarm:
                     # event with a all-day DTSTART are most-likely all-day
                     # events
@@ -377,6 +385,14 @@ END:VALARM'''
                         need_valarm = False
             elif line.startswith('DTEND:') and dtend is None:
                 dtend = line[len('DTEND:'):]
+                if len(dtend) == len('19700101'):
+                    # broken vEvent: default value type is DATE-TIME
+                    new_line = 'DTEND;VALUE=DATE:%s' % dtend
+                    if len(real_lines) == 1:
+                        vevent[-1] = new_line
+                    else:
+                        vevent = vevent[:-len(real_lines)]
+                        vevent.append(new_line)
             elif line.startswith('DTEND;') and dtend is None:
                 dtend = line[line.rfind(':') + 1:]
                 dtend_tzid = extract_tzid('DTEND', line)
