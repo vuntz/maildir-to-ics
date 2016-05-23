@@ -188,7 +188,6 @@ def save_vevent(mail, vevent, uid,
 
         fb = open(path)
         content = LineUnwrapper(fb.read())
-        lines = fb.readlines()
         fb.close()
 
         for (real_lines, line) in content.each_line():
