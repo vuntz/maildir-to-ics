@@ -26,6 +26,7 @@
 #
 
 
+import codecs
 import errno
 import os
 import string
@@ -548,7 +549,7 @@ def write_ics_from_dir(vevents_directory, vtimezones_directory, dest, limit_past
     if dest is not None:
         fp = io.open(dest, 'w', newline='\r\n')
     else:
-        fp = sys.stdout
+        fp = codecs.getwriter('utf8')(sys.stdout)
 
     fp.write(u'BEGIN:VCALENDAR\n')
     fp.write(u'VERSION:2.0\n')
