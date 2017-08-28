@@ -582,75 +582,11 @@ def write_ics_from_dir(vevents_directory, vtimezones_directory, dest, limit_past
         fp.close()
 
 
-def main(args):
-    global ADD_ALARM
-    global BROKEN_UTF8
-    global PREVIOUS_RUN_SECTION
-    global VERBOSE
+def do_ics_file(maildir, dest_ics, not_before, not_after, force):
     global VEVENTS_DATES
     global VEVENTS_TZIDS
 
-    usage_str = 'usage: %prog [options] --maildir=PATH'
-    parser = optparse.OptionParser(usage=usage_str)
-
-    parser.add_option('--maildir', dest='maildir',
-                      default=None,
-                      metavar="PATH",
-                      help='Maildir directory to extract events from')
-    parser.add_option('--ics', dest='ics',
-                      default=None,
-                      metavar="FILE",
-                      help='iCalendar file that will be created '
-                           '(if not used, will output ics to stdout)')
-    parser.add_option('--not-before', dest='not_before',
-                      type='int', default=61,
-                      metavar='N',
-                      help='ignore events that happened before the '
-                           'last N days (default: 61, ie two months)')
-    parser.add_option('--not-after', dest='not_after',
-                      type='int', default=182,
-                      metavar='N',
-                      help='ignore events that will happen after the '
-                           'next N days (default: 182, ie six months)')
-    parser.add_option('--add-alarm', dest='add_alarm',
-                      action='store_true', default=False,
-                      help='automatically add 5 minutes alarm to non-all-day '
-                           'appointments')
-    parser.add_option('--broken-utf8', dest='broken_utf8',
-                      action='store_true', default=False,
-                      help='assume that UTF-8 in mails is mis-encoded UTF-8 '
-                           'in Latin-1')
-    parser.add_option('--force', '-f', dest='force',
-                      action='store_true', default=False,
-                      help='always regenerate ics file')
-    parser.add_option('--verbose', '-v', dest='verbose',
-                      action='count', default=0,
-                      help='be verbose; use multiple times to add more '
-                           'verbosity (default: false)')
-
-    (options, args) = parser.parse_args()
-
-    maildir = options.maildir
-    dest_ics = options.ics
-    not_before = options.not_before
-    not_after = options.not_after
-    ADD_ALARM = options.add_alarm
-    BROKEN_UTF8 = options.broken_utf8
-    force = options.force
-    VERBOSE = options.verbose
-
-    if maildir is None:
-        parser.error('--maildir argument is required')
-
-    if not os.path.isdir(maildir):
-        print >>sys.stderr, 'Non-existing Maildir directory \'%s\'' % maildir
-        return 1
-
-    # move to absolute path, as we use it to compute a hash
-    maildir = os.path.abspath(maildir)
-    # move to absolute path, as we'll save it
-    if dest_ics is not None:
-        dest_ics = os.path.abspath(dest_ics)
+    info_dir = get_cache_dir(maildir)
 
     now = datetime.datetime.now()
     past = now - datetime.timedelta(days=not_before)
@@ -658,24 +594,7 @@ def main(args):
     limit_past = past.strftime('%Y%m%d')
     limit_future = future.strftime('%Y%m%d')
 
-    fallback_xdg_cache_home = os.path.join(os.path.expanduser('~'), '.cache')
-    xdg_cache_home = os.environ.get('XDG_CACHE_HOME', fallback_xdg_cache_home)
-    if not os.path.exists(xdg_cache_home):
-        dirname = os.path.dirname(xdg_cache_home)
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-        os.mkdir(xdg_cache_home, 0700)
-
-    cache_hash = hashlib.md5()
-    cache_hash.update(maildir)
-
-    info_dir = os.path.join(xdg_cache_home, 'maildir-to-ics',
-                            cache_hash.hexdigest())
-
-    previous_run = ConfigParser.SafeConfigParser()
-    previous_run_path = os.path.join(info_dir, 'previous-run.ini')
-    if os.path.exists(previous_run_path):
-        previous_run.read(previous_run_path)
+    previous_run = get_previous_run(cache_dir=info_dir)
 
     old_mails_hash = None
     old_vevents_cache_hash = None
@@ -687,9 +606,6 @@ def main(args):
     old_limit_past = None
     old_limit_future = None
     old_ics = None
-
-    if not previous_run.has_section(PREVIOUS_RUN_SECTION):
-        previous_run.add_section(PREVIOUS_RUN_SECTION)
 
     if previous_run.has_option(PREVIOUS_RUN_SECTION, 'mails'):
         old_mails_hash = previous_run.get(PREVIOUS_RUN_SECTION,
@@ -878,12 +794,122 @@ def main(args):
         previous_run.set(PREVIOUS_RUN_SECTION, 'limit_future', limit_future)
         previous_run.set(PREVIOUS_RUN_SECTION, 'file', dest_ics or '')
 
-        fp = open(previous_run_path, 'w')
-        previous_run.write(fp)
-        fp.close()
+        save_previous_run(previous_run, cache_dir=info_dir)
     else:
         verbose_print('No need to regenerate vCalendar: '
                       'no change compared to last run.', 1)
+
+
+def get_cache_dir(maildir):
+    # move to absolute path, as we use it to compute a hash
+    maildir = os.path.abspath(maildir)
+
+    fallback_xdg_cache_home = os.path.join(os.path.expanduser('~'), '.cache')
+    xdg_cache_home = os.environ.get('XDG_CACHE_HOME', fallback_xdg_cache_home)
+    if not os.path.exists(xdg_cache_home):
+        dirname = os.path.dirname(xdg_cache_home)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+        os.mkdir(xdg_cache_home, 0700)
+
+    cache_hash = hashlib.md5()
+    cache_hash.update(maildir)
+
+    return os.path.join(xdg_cache_home, 'maildir-to-ics',
+                            cache_hash.hexdigest())
+
+
+def get_previous_run_path(cache_dir = None, maildir = None):
+    if not cache_dir and maildir:
+        cache_dir = get_cache_dir(maildir)
+    if not cache_dir:
+        raise Exception("No Maildir directory specified!")
+    return os.path.join(cache_dir, 'previous-run.ini')
+
+
+def get_previous_run(cache_dir = None, maildir = None):
+    previous_run_path = get_previous_run_path(cache_dir, maildir)
+    previous_run = ConfigParser.SafeConfigParser()
+    if os.path.exists(previous_run_path):
+        previous_run.read(previous_run_path)
+    if not previous_run.has_section(PREVIOUS_RUN_SECTION):
+        previous_run.add_section(PREVIOUS_RUN_SECTION)
+    return previous_run
+
+
+def save_previous_run(data, cache_dir = None, maildir = None):
+    previous_run_path = get_previous_run_path(cache_dir, maildir)
+    fp = open(previous_run_path, 'w')
+    data.write(fp)
+    fp.close()
+
+
+def main(args):
+    global ADD_ALARM
+    global BROKEN_UTF8
+    global VERBOSE
+
+    usage_str = 'usage: %prog [options] --maildir=PATH'
+    parser = optparse.OptionParser(usage=usage_str)
+
+    parser.add_option('--maildir', dest='maildir',
+                      default=None,
+                      metavar="PATH",
+                      help='Maildir directory to extract events from')
+    parser.add_option('--ics', dest='ics',
+                      default=None,
+                      metavar="FILE",
+                      help='iCalendar file that will be created '
+                           '(if not used, will output ics to stdout)')
+    parser.add_option('--not-before', dest='not_before',
+                      type='int', default=61,
+                      metavar='N',
+                      help='ignore events that happened before the '
+                           'last N days (default: 61, ie two months)')
+    parser.add_option('--not-after', dest='not_after',
+                      type='int', default=182,
+                      metavar='N',
+                      help='ignore events that will happen after the '
+                           'next N days (default: 182, ie six months)')
+    parser.add_option('--add-alarm', dest='add_alarm',
+                      action='store_true', default=False,
+                      help='automatically add 5 minutes alarm to non-all-day '
+                           'appointments')
+    parser.add_option('--broken-utf8', dest='broken_utf8',
+                      action='store_true', default=False,
+                      help='assume that UTF-8 in mails is mis-encoded UTF-8 '
+                           'in Latin-1')
+    parser.add_option('--force', '-f', dest='force',
+                      action='store_true', default=False,
+                      help='always regenerate ics file')
+    parser.add_option('--verbose', '-v', dest='verbose',
+                      action='count', default=0,
+                      help='be verbose; use multiple times to add more '
+                           'verbosity (default: false)')
+
+    (options, args) = parser.parse_args()
+
+    maildir = options.maildir
+    dest_ics = options.ics
+    not_before = options.not_before
+    not_after = options.not_after
+    ADD_ALARM = options.add_alarm
+    BROKEN_UTF8 = options.broken_utf8
+    force = options.force
+    VERBOSE = options.verbose
+
+    if maildir is None:
+        parser.error('--maildir argument is required')
+
+    if not os.path.isdir(maildir):
+        print >>sys.stderr, 'Non-existing Maildir directory \'%s\'' % maildir
+        return 1
+
+    # move to absolute path, as we'll save it
+    if dest_ics is not None:
+        dest_ics = os.path.abspath(dest_ics)
+
+    do_ics_file(maildir, dest_ics, not_before, not_after, force)
 
     return 0
 
