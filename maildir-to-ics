@@ -66,7 +66,8 @@ How this works:
 
 ADD_ALARM = False
 BROKEN_UTF8 = False
-PREVIOUS_RUN_SECTION = 'previous'
+PREVIOUS_RUN_FILE_SECTION = 'file previous'
+PREVIOUS_RUN_DIR_SECTION = 'dir previous'
 VERBOSE = 0
 VEVENTS_DATES = {}
 VEVENTS_TZIDS = {}
@@ -439,7 +440,34 @@ END:VALARM'''
         verbose_print('Invalid vCalendar in \'%s\'.' % mail, 2)
 
 
-def save_events_from_mail(filename, vevents_save_dir, vtimezones_save_dir):
+def save_vcalendar(filename, msg, charset, part_number, vcalendar, dest_dir):
+    message_id = msg['message-id']
+    if not message_id:
+        verbose_print('Mail \'%s\' has no Message-ID header.' % filename, 1)
+        message_id = os.path.basename(filename)
+
+    if message_id[0] == '<':
+        message_id = message_id[1:]
+    if message_id[-1] == '>':
+        message_id = message_id[:-1]
+
+    # FIXME: there must be a better way than hard-coding this
+    if len(message_id) > 253:
+        verbose_print('Mail \'%s\' generates vCalendar files with a filename '
+                      'too long.' % filename, 1)
+        message_id = os.path.basename(filename)
+        if len(message_id) > 253:
+            message_id = message_id[:-2]
+
+    basename = "%s-%s" % (message_id, part_number)
+
+    filename = os.path.join(dest_dir, basename)
+    fp = open(filename, 'w')
+    fp.write(vcalendar.encode(charset))
+    fp.close()
+
+
+def save_events_from_mail(filename, file_args, dir_args):
     global BROKEN_UTF8
 
     if not os.path.exists(filename):
@@ -450,9 +478,13 @@ def save_events_from_mail(filename, vevents_save_dir, vtimezones_save_dir):
     msg = email.message_from_file(fp)
     fp.close()
 
+    part_number = 0
+
     for part in msg.walk():
         if part.get_content_type() != 'text/calendar':
             continue
+
+        part_number += 1
 
         charset = part.get_content_charset('ascii').lower()
         vcalendar = part.get_payload(decode=True).decode(charset)
@@ -495,10 +527,16 @@ def save_events_from_mail(filename, vevents_save_dir, vtimezones_save_dir):
 
             vcalendar = reencoded
 
-        save_events_from_vcalendar(filename, vcalendar, vevents_save_dir, vtimezones_save_dir)
+        if file_args:
+            save_events_from_vcalendar(filename, vcalendar,
+                                       file_args['vevents_save_dir'],
+                                       file_args['vtimezones_save_dir'])
+        if dir_args:
+            save_vcalendar(filename, msg, charset, part_number, vcalendar,
+                           dir_args['dest_dir'])
 
 
-def save_events_from_mails_in_dir(directory, vevents_save_dir, vtimezones_save_dir):
+def save_events_from_mails_in_dir(directory, file_args = None, dir_args = None):
     if not os.path.isdir(directory):
         print >>sys.stderr, 'Non-existing Maildir subdirectory ' \
                             '\'%s\'???' % directory
@@ -509,13 +547,13 @@ def save_events_from_mails_in_dir(directory, vevents_save_dir, vtimezones_save_d
         if not os.path.isfile(path):
             verbose_print('Skipping \'%s\': not a file.' % path, 1)
             continue
-        save_events_from_mail(path, vevents_save_dir, vtimezones_save_dir)
+        save_events_from_mail(path, file_args, dir_args)
 
 
-def save_events_from_maildir(directory, vevents_save_dir, vtimezones_save_dir):
+def save_events_from_maildir(directory, file_args = None, dir_args = None):
     for subdir in ['cur', 'new', 'tmp']:
         path = os.path.join(directory, subdir)
-        save_events_from_mails_in_dir(path, vevents_save_dir, vtimezones_save_dir)
+        save_events_from_mails_in_dir(path, file_args, dir_args)
 
 
 def write_ics_from_dir(vevents_directory, vtimezones_directory, dest, limit_past, limit_future):
@@ -582,6 +620,44 @@ def write_ics_from_dir(vevents_directory, vtimezones_directory, dest, limit_past
         fp.close()
 
 
+def do_ics_dir(maildir, dest_ics_dir, force):
+    previous_run = get_previous_run(maildir=maildir)
+
+    old_mails_hash = None
+    old_dest_ics_dir = None
+
+    if previous_run.has_option(PREVIOUS_RUN_DIR_SECTION, 'mails'):
+        old_mails_hash = previous_run.get(PREVIOUS_RUN_DIR_SECTION,
+                                          'mails')
+    if previous_run.has_option(PREVIOUS_RUN_DIR_SECTION, 'dest_dir'):
+        old_dest_ics_dir = previous_run.get(PREVIOUS_RUN_DIR_SECTION,
+                                            'dest_dir')
+
+    new_mails_hash = hash_from_dir(maildir)
+
+    if not force and \
+        os.path.exists(dest_ics_dir) and \
+        dest_ics_dir == old_dest_ics_dir and \
+        new_mails_hash == old_mails_hash:
+        verbose_print('No need to update directory: '
+                      'no change compared to last run.', 1)
+        return
+
+    previous_run.set(PREVIOUS_RUN_DIR_SECTION, 'mails', new_mails_hash)
+    previous_run.set(PREVIOUS_RUN_DIR_SECTION, 'dest_dir', dest_ics_dir)
+
+    if not os.path.exists(dest_ics_dir):
+        dirname = os.path.dirname(dest_ics_dir)
+        if dirname and not os.path.exists(dirname):
+            os.makedirs(dirname)
+        os.mkdir(dest_ics_dir, 0700)
+
+    dir_args = { 'dest_dir': dest_ics_dir }
+    save_events_from_maildir(maildir, dir_args=dir_args)
+
+    save_previous_run(previous_run, maildir=maildir)
+
+
 def do_ics_file(maildir, dest_ics, not_before, not_after, force):
     global VEVENTS_DATES
     global VEVENTS_TZIDS
@@ -607,39 +683,39 @@ def do_ics_file(maildir, dest_ics, not_before, not_after, force):
     old_limit_future = None
     old_ics = None
 
-    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'mails'):
-        old_mails_hash = previous_run.get(PREVIOUS_RUN_SECTION,
+    if previous_run.has_option(PREVIOUS_RUN_FILE_SECTION, 'mails'):
+        old_mails_hash = previous_run.get(PREVIOUS_RUN_FILE_SECTION,
                                           'mails')
-    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'vevents_cache'):
-        old_vevents_cache_hash = previous_run.get(PREVIOUS_RUN_SECTION,
+    if previous_run.has_option(PREVIOUS_RUN_FILE_SECTION, 'vevents_cache'):
+        old_vevents_cache_hash = previous_run.get(PREVIOUS_RUN_FILE_SECTION,
                                                   'vevents_cache')
-    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'vtimezones_cache'):
-        old_vtimezones_cache_hash = previous_run.get(PREVIOUS_RUN_SECTION,
+    if previous_run.has_option(PREVIOUS_RUN_FILE_SECTION, 'vtimezones_cache'):
+        old_vtimezones_cache_hash = previous_run.get(PREVIOUS_RUN_FILE_SECTION,
                                                      'vtimezones_cache')
-    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'vevents_dates'):
-        old_vevents_dates_hash = previous_run.get(PREVIOUS_RUN_SECTION,
+    if previous_run.has_option(PREVIOUS_RUN_FILE_SECTION, 'vevents_dates'):
+        old_vevents_dates_hash = previous_run.get(PREVIOUS_RUN_FILE_SECTION,
                                                   'vevents_dates')
-    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'vevents_tzids'):
-        old_vevents_tzids_hash = previous_run.get(PREVIOUS_RUN_SECTION,
+    if previous_run.has_option(PREVIOUS_RUN_FILE_SECTION, 'vevents_tzids'):
+        old_vevents_tzids_hash = previous_run.get(PREVIOUS_RUN_FILE_SECTION,
                                                   'vevents_tzids')
-    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'add_alarm'):
-        old_add_alarm = previous_run.get(PREVIOUS_RUN_SECTION,
+    if previous_run.has_option(PREVIOUS_RUN_FILE_SECTION, 'add_alarm'):
+        old_add_alarm = previous_run.get(PREVIOUS_RUN_FILE_SECTION,
                                          'add_alarm')
-    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'broken_utf8'):
-        old_broken_utf8 = previous_run.get(PREVIOUS_RUN_SECTION,
+    if previous_run.has_option(PREVIOUS_RUN_FILE_SECTION, 'broken_utf8'):
+        old_broken_utf8 = previous_run.get(PREVIOUS_RUN_FILE_SECTION,
                                            'broken_utf8')
-    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'limit_past'):
-        old_limit_past = previous_run.get(PREVIOUS_RUN_SECTION,
+    if previous_run.has_option(PREVIOUS_RUN_FILE_SECTION, 'limit_past'):
+        old_limit_past = previous_run.get(PREVIOUS_RUN_FILE_SECTION,
                                           'limit_past')
-    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'limit_future'):
-        old_limit_future = previous_run.get(PREVIOUS_RUN_SECTION,
+    if previous_run.has_option(PREVIOUS_RUN_FILE_SECTION, 'limit_future'):
+        old_limit_future = previous_run.get(PREVIOUS_RUN_FILE_SECTION,
                                             'limit_future')
-    if previous_run.has_option(PREVIOUS_RUN_SECTION, 'file'):
-        old_ics = previous_run.get(PREVIOUS_RUN_SECTION,
+    if previous_run.has_option(PREVIOUS_RUN_FILE_SECTION, 'file'):
+        old_ics = previous_run.get(PREVIOUS_RUN_FILE_SECTION,
                                    'file')
 
     new_mails_hash = hash_from_dir(maildir)
-    previous_run.set(PREVIOUS_RUN_SECTION, 'mails', new_mails_hash)
+    previous_run.set(PREVIOUS_RUN_FILE_SECTION, 'mails', new_mails_hash)
 
     vevents_cache_dir = os.path.join(info_dir, 'vevents')
     vevents_cache_dir_exists = os.path.exists(vevents_cache_dir)
@@ -713,19 +789,23 @@ def do_ics_file(maildir, dest_ics, not_before, not_after, force):
         if vtimezones_cache_dir_exists:
             shutil.rmtree(vtimezones_cache_dir)
         os.makedirs(vtimezones_cache_dir)
-        save_events_from_maildir(maildir, vevents_cache_dir, vtimezones_cache_dir)
+        file_args = {
+            'vevents_cache_dir': vevents_cache_dir,
+            'vtimezones_cache_dir': vtimezones_cache_dir
+        }
+        save_events_from_maildir(maildir, file_args=file_args)
 
         new_vevents_cache_hash = hash_from_dir(vevents_cache_dir)
-        previous_run.set(PREVIOUS_RUN_SECTION,
+        previous_run.set(PREVIOUS_RUN_FILE_SECTION,
                          'vevents_cache', new_vevents_cache_hash)
 
         new_vtimezones_cache_hash = hash_from_dir(vtimezones_cache_dir)
-        previous_run.set(PREVIOUS_RUN_SECTION,
+        previous_run.set(PREVIOUS_RUN_FILE_SECTION,
                          'vtimezones_cache', new_vtimezones_cache_hash)
 
-        previous_run.set(PREVIOUS_RUN_SECTION,
+        previous_run.set(PREVIOUS_RUN_FILE_SECTION,
                          'add_alarm', str(ADD_ALARM))
-        previous_run.set(PREVIOUS_RUN_SECTION,
+        previous_run.set(PREVIOUS_RUN_FILE_SECTION,
                          'broken_utf8', str(BROKEN_UTF8))
 
         dates_hash = hashlib.md5()
@@ -737,7 +817,7 @@ def do_ics_file(maildir, dest_ics, not_before, not_after, force):
         fp.close()
 
         new_vevents_dates_hash = dates_hash.hexdigest()
-        previous_run.set(PREVIOUS_RUN_SECTION,
+        previous_run.set(PREVIOUS_RUN_FILE_SECTION,
                          'vevents_dates', new_vevents_dates_hash)
 
         tzid_hash = hashlib.md5()
@@ -751,7 +831,7 @@ def do_ics_file(maildir, dest_ics, not_before, not_after, force):
         fp.close()
 
         new_vevents_tzids_hash = tzid_hash.hexdigest()
-        previous_run.set(PREVIOUS_RUN_SECTION,
+        previous_run.set(PREVIOUS_RUN_FILE_SECTION,
                          'vevents_tzids', new_vevents_tzids_hash)
     else:
         new_vevents_cache_hash = old_vevents_cache_hash
@@ -790,9 +870,9 @@ def do_ics_file(maildir, dest_ics, not_before, not_after, force):
             if dest_ics is None and e.errno != errno.EPIPE:
                 raise e
 
-        previous_run.set(PREVIOUS_RUN_SECTION, 'limit_past', limit_past)
-        previous_run.set(PREVIOUS_RUN_SECTION, 'limit_future', limit_future)
-        previous_run.set(PREVIOUS_RUN_SECTION, 'file', dest_ics or '')
+        previous_run.set(PREVIOUS_RUN_FILE_SECTION, 'limit_past', limit_past)
+        previous_run.set(PREVIOUS_RUN_FILE_SECTION, 'limit_future', limit_future)
+        previous_run.set(PREVIOUS_RUN_FILE_SECTION, 'file', dest_ics or '')
 
         save_previous_run(previous_run, cache_dir=info_dir)
     else:
@@ -832,8 +912,10 @@ def get_previous_run(cache_dir = None, maildir = None):
     previous_run = ConfigParser.SafeConfigParser()
     if os.path.exists(previous_run_path):
         previous_run.read(previous_run_path)
-    if not previous_run.has_section(PREVIOUS_RUN_SECTION):
-        previous_run.add_section(PREVIOUS_RUN_SECTION)
+    if not previous_run.has_section(PREVIOUS_RUN_FILE_SECTION):
+        previous_run.add_section(PREVIOUS_RUN_FILE_SECTION)
+    if not previous_run.has_section(PREVIOUS_RUN_DIR_SECTION):
+        previous_run.add_section(PREVIOUS_RUN_DIR_SECTION)
     return previous_run
 
 
@@ -861,20 +943,28 @@ def main(args):
                       metavar="FILE",
                       help='iCalendar file that will be created '
                            '(if not used, will output ics to stdout)')
+    parser.add_option('--ics-dir', dest='ics_dir',
+                      default=None,
+                      metavar="DIRECTORY",
+                      help='Directory that will be populated with iCalendar'
+                           'files from each mail')
     parser.add_option('--not-before', dest='not_before',
                       type='int', default=61,
                       metavar='N',
                       help='ignore events that happened before the '
-                           'last N days (default: 61, ie two months)')
+                           'last N days (default: 61, ie two months)'
+                           '; ignored with --ics-dir')
     parser.add_option('--not-after', dest='not_after',
                       type='int', default=182,
                       metavar='N',
                       help='ignore events that will happen after the '
-                           'next N days (default: 182, ie six months)')
+                           'next N days (default: 182, ie six months)'
+                           '; ignored with --ics-dir')
     parser.add_option('--add-alarm', dest='add_alarm',
                       action='store_true', default=False,
                       help='automatically add 5 minutes alarm to non-all-day '
-                           'appointments')
+                           'appointments'
+                           '; ignored with --ics-dir')
     parser.add_option('--broken-utf8', dest='broken_utf8',
                       action='store_true', default=False,
                       help='assume that UTF-8 in mails is mis-encoded UTF-8 '
@@ -891,6 +981,7 @@ def main(args):
 
     maildir = options.maildir
     dest_ics = options.ics
+    dest_ics_dir = options.ics_dir
     not_before = options.not_before
     not_after = options.not_after
     ADD_ALARM = options.add_alarm
@@ -905,11 +996,24 @@ def main(args):
         print >>sys.stderr, 'Non-existing Maildir directory \'%s\'' % maildir
         return 1
 
-    # move to absolute path, as we'll save it
-    if dest_ics is not None:
-        dest_ics = os.path.abspath(dest_ics)
+    if dest_ics_dir and os.path.exists(dest_ics_dir) and not os.path.isdir(dest_ics_dir):
+        print >>sys.stderr, '\'%s\' exists but is not a directory' % dest_ics_dir
+        return 1
 
-    do_ics_file(maildir, dest_ics, not_before, not_after, force)
+    if dest_ics and dest_ics_dir:
+        print >>sys.stderr, 'Only one of --dest-ics and --dest-ics-dir can be used'
+        return 1
+
+    if dest_ics_dir:
+        # move to absolute path, as we'll save it (and cache it)
+        dest_ics_dir = os.path.abspath(dest_ics_dir)
+        do_ics_dir(maildir, dest_ics_dir, force)
+    else:
+        # move to absolute path, as we'll save it (and cache it)
+        if dest_ics is not None:
+            dest_ics = os.path.abspath(dest_ics)
+
+        do_ics_file(maildir, dest_ics, not_before, not_after, force)
 
     return 0
 
