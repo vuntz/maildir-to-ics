@@ -895,8 +895,12 @@ def get_cache_dir(maildir):
     cache_hash = hashlib.md5()
     cache_hash.update(maildir)
 
-    return os.path.join(xdg_cache_home, 'maildir-to-ics',
-                            cache_hash.hexdigest())
+    cache_dir = os.path.join(xdg_cache_home, 'maildir-to-ics',
+                             cache_hash.hexdigest())
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+
+    return cache_dir
 
 
 def get_previous_run_path(cache_dir = None, maildir = None):
